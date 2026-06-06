@@ -1,88 +1,88 @@
 ---
 name: leads-hunt-outreach
-description: "On-demand outreach drafting from a kb.md lead row + your voice file. Reads style.md fresh on every draft."
-version: 0.1.0
+description: "On-demand outreach drafting for a kb.md lead row, in the AE's voice. The host agent reads style.md fresh on every draft."
+version: 0.2.0
 author: Ben Lim
 license: MIT
 ---
 
-# Leads Hunt Outreach
+# leads-hunt-outreach
 
-Compose a cold outreach message for a lead in YOUR voice. Output **only the message body** — no preamble, no commentary, no character count. The textarea or chat receives raw output verbatim and that is what the customer sees.
+Draft a cold outreach message for a single lead, in the AE's voice. **You (the host agent) do this directly in chat — no scripts, no external LLM calls.** The voice file is read fresh on every draft so style edits take effect immediately.
 
-## When to use
+## When to invoke
 
-- CLI: `python3 scripts/draft.py <slug>` (or `--company <name>` for fuzzy match)
-- Lark / chat: agent calls `python3 scripts/draft.py <slug>` directly via its terminal tool, then pastes the result back to you
+The AE says one of:
+- *"draft outreach for &lt;company&gt;"*
+- *"write a cold message for &lt;company&gt;"*
+- *"@&lt;company&gt; what would you say?"*
+- *"reply to the digest, target row N"*
 
-The drafter routes through a single script (`scripts/draft.py`) — single source of truth for prompt + cleanup logic, no drift between surfaces.
+If the request is ambiguous about which lead, ask before drafting.
 
-## Voice file
+## Procedure (you do this directly, no scripts)
 
-Your voice file lives at `<workspace>/leads-hunt/style.md` (default: `~/.openclaw/workspace/leads-hunt/style.md`). Manage it conversationally via the `leads-hunt-voice` skill, or edit it directly. The drafter re-reads it fresh on every invocation, so changes take effect immediately — no restart, no rebuild.
+1. **Locate the lead row** in `<workspace>/leads-hunt/kb.md` (default workspace: `~/.openclaw/workspace`):
+   - If the AE named a company: find the H3 sub-section under `## Shipped Leads` whose heading matches that company (case-insensitive, allow partial match).
+   - If the AE said *"row N from today's digest"*: read the most recent date H2 under `## Shipped Leads` and pick the Nth bullet/sub-section.
+   - If still ambiguous (multiple matches, or no clear digest), ask the AE to clarify (paste the row, give the exact company name, or specify a date).
+   - If kb.md is missing entirely, tell the AE the workspace isn't set up yet — point them at the `leads-hunt` skill to seed it.
 
-If `<workspace>/leads-hunt/style.md` does not exist, the drafter falls back to the blank-slate template at `references/style.md` (this skill's own copy). Without examples, drafts will be generic — fill in your voice file before relying on output.
+2. **Read the AE's voice** from `<workspace>/leads-hunt/style.md`. Pay attention to sections that drive drafting:
+   - `## Rhythm & cadence` (or `## Your voice rhythm`) — how the AE writes: sentence length, hedges, em-dash policy, punctuation tics
+   - `## Vocabulary do's and don'ts` (or an `### Avoid` / banlist subsection) — explicit allow/banlist
+   - `## Real outreach samples` (or `## Examples`) — paste blocks of messages they've sent
 
-## Inputs
+   Heading names vary between voice files; match on intent, not exact string.
 
-The script reads a lead row from `<workspace>/leads-hunt/kb.md` by slug (`kb.lookup(slug)`). Expected fields per lead row:
+   If style.md is empty, missing, or has only placeholder text (`[example message here]`, `_(empty — ...)_`), draft in a flat, professional, low-fluff register and tell the AE:
+   > *your style.md is empty — say `add this to my voice: <paste a real message>` to teach me your voice.*
 
-- `company_name`, `website`, `region`, `description`, `signal`, `source`
-- `score` (0-10, optional)
-- `contacts` (JSON array; pick first with email or linkedin → that's the PIC)
-- `ceo_name` as PIC fallback
+3. **Draft the message** matching the voice. Constraints:
+   - 60-120 words unless the AE specifies otherwise
+   - Open with a specific reference to the lead's recent activity (the kb.md row will have a `signal` / `why` field — use it)
+   - Exactly one concrete CTA at the end (sandbox link / 15-min call / share a benchmark / reply with a question)
+   - Match the AE's punctuation, capitalization, emoji, and hedge patterns from samples
+   - Honor the `### Avoid` banlist exactly — if a banned phrase fits naturally, restructure
+   - No invented facts: every product capability or proof URL must come from style.md or the kb row. If a fact isn't there, omit the claim.
 
-## Output structure
+4. **Reply in chat** with the draft, prefixed by a 1-line note in italics so the AE can tell at a glance what you read:
 
-Five blocks in order — adapt phrasing to YOUR voice file, but keep the skeleton:
+   > *Draft for Acme Corp (style.md: 4 samples, rhythm-set):*
+   >
+   > [the message body]
 
-```
-[1] Greeting:  Address the PIC by first name. Unknown name → generic greeting.
+   Replace the parenthetical with what you actually loaded — e.g. `(style.md: empty, generic voice)` if no samples were available.
 
-[2] Bridge:    1 sentence positioning who you are and previewing the value claim.
+5. **Iterate** if the AE responds with edits. After 2–3 rounds, if a recurring correction emerges (e.g. *"always shorter"*, *"never use semicolons"*, *"don't open with 'hey'"*), suggest:
 
-[3] Products:  1-3 numbered items (1. 2. 3., not bullets). Each tied to the
-               lead's actual product, workflow, or vertical — never abstract.
+   > *want me to add this to your voice? say `add to my don'ts: semicolons` (or `add to my voice: <rule>`)*
 
-[4] Demos:     0-2 demo URLs / proof points. Each on own line, with a 1-line
-               label above. Pick vertical-fit URL from your voice file.
+   This routes to the `leads-hunt-voice` skill, which owns style.md edits.
 
-[5] Closer:    A short forward-looking line.
-```
+## What you do NOT do
 
-The exact wording of each block — greeting style, bridge phrasing, closer line, hedges, punctuation rhythm — comes from `style.md`. The drafter reads your voice file fresh every call.
+- Do **NOT** call any external LLM API. You ARE the LLM — draft inline.
+- Do **NOT** invoke a script or subprocess for drafting; this skill is instruction-only.
+- Do **NOT** write the draft to disk. It lives in the chat reply only.
+- Do **NOT** modify `kb.md` or `style.md` from this skill. `kb.md` is owned by `leads-hunt`; `style.md` by `leads-hunt-voice`. Suggest the right skill if the AE asks for an edit.
 
-## Hard rules
+## Worked example
 
-1. **No subject line** — textarea-only.
-2. **No emoji** in cold outreach (unless your voice file explicitly opts in).
-3. **No em-dashes (—) or en-dashes (–)** — they read as AI-tells. Use comma, hyphen-with-spaces, or restructure.
-4. **No meta-commentary in output**: never emit "Character count: NNN", "Let me tighten", "Here is the draft:", code fences, or any reasoning/iteration trace. Verify silently, emit only the final body.
-5. **No invented facts**: every product capability, sample URL, or proof point must come from the voice file or kb row. If a fact isn't there, omit the claim.
+AE: *"draft outreach for Acme Corp"*
 
-## Forbidden patterns (default; override in voice file if needed)
+You:
+1. Read `~/.openclaw/workspace/leads-hunt/kb.md` → find `### Acme Corp` under the latest date heading. Row says: *"CEO posted on LinkedIn about migrating off Runway; BytePlus has comparable Seedance pricing."*
+2. Read `~/.openclaw/workspace/leads-hunt/style.md` → AE's rhythm: short sentences, comma splices ok, no em-dashes, max 1 emoji, sample shows opener `hey, saw your...`. Banlist includes *"Hope this finds you well"*, *"reaching out"*.
+3. Draft (in chat):
 
-- "Hope this helps"
-- "Let me know if you have any questions"
-- "In summary" / "Overall"
-- "Feel free to reach out"
-- Generic openers: "I came across your company", "I noticed your business"
-- AI-tells: "I'd be happy to...", "I think you'll find...", "I'm reaching out to...", "Just wanted to..."
-- "I hope you don't mind..."
+   > *Draft for Acme Corp (style.md: 4 samples, rhythm-set):*
+   >
+   > hey, saw your post about leaving runway. we have similar pricing on seedance with a free tier you can play with. happy to set up a sandbox if you want, takes 5 min.
 
-## Output contract
+If the AE replies *"shorter, drop the 'happy to'"*, revise inline and after the second similar correction offer to teach the voice file.
 
-- Start the response with the greeting line directly. No preamble.
-- End with the closer.
-- **Nothing else.** No "Here is the draft:", no character count, no code fences, no explanation. The response IS the message.
+## Companion skills
 
-## Pitfalls
-
-- **Greeting cleanup:** the drafter runs a regex that finds the LAST greeting line followed by a blank line and trims everything before it. So if you accidentally emit reasoning prose, the script may still rescue it — but don't rely on this. Emit clean.
-- **Sparse signal:** if the lead row has no `signal` and `description` is thin, fall back to a generic value claim from your voice file rather than inventing specifics.
-- **Empty contacts:** when `contacts=[]` and no `ceo_name`, default to a generic greeting from your voice file. Never invent a name.
-- **{SPECIFIC ASPECT} must be concrete:** "AI workflow" is too generic. Pull a specific phrase from the lead's actual description. If genuinely sparse, use the safest fallback in your voice file.
-
-## Companion skill
-
-`leads-hunt-voice` — manages `<workspace>/leads-hunt/style.md` via Lark chat. Use it to set your voice rhythm, add example messages, and review what the drafter will read on the next call.
+- `leads-hunt` — owns the workspace and kb.md (lead discovery, scoring, shipping).
+- `leads-hunt-voice` — owns style.md (the AE's voice file). Use it when the AE wants to teach a new pattern or review what you'll read on the next draft.

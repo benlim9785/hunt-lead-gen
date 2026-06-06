@@ -1,6 +1,6 @@
 # Troubleshooting — leads-hunt-setup
 
-Common failure modes encountered during the 8-step wizard, with fix recipes. Cross-reference [security.md](security.md) for credential-handling questions.
+Common failure modes encountered during the 7-step wizard, with fix recipes. Cross-reference [security.md](security.md) for credential-handling questions.
 
 ---
 
@@ -39,7 +39,7 @@ openclaw skills install ./leads-hunt-voice
 **Cause**: A prior run of `leads-hunt-setup` populated `<workspace>/leads-hunt/kb.md`, or the AE has been using the pipeline for a while.
 
 **Fix**:
-- If the AE wants to **resume setup** (e.g. just re-do steps 5/6 after an OTP timeout), do NOT pass `--force`. The wizard's resume logic skips already-done steps.
+- If the AE wants to **resume setup** (e.g. just re-do steps 4/5 after an OTP timeout), do NOT pass `--force`. The wizard's resume logic skips already-done steps.
 - If the AE genuinely wants to **start over**, back up `kb.md` first (it contains shipped leads + customer tracking that's painful to lose), then re-run with `--force`:
   ```bash
   cp <workspace>/leads-hunt/kb.md /tmp/kb.md.backup
@@ -48,7 +48,7 @@ openclaw skills install ./leads-hunt-voice
 
 ---
 
-## LinkedIn login (step 5)
+## LinkedIn login (step 4)
 
 ### `Wrong email or password`
 
@@ -75,7 +75,7 @@ openclaw skills install ./leads-hunt-voice
    ```
 3. Manually log in to https://www.linkedin.com/ in that Chromium window. Solve any captcha by hand.
 4. Close Chromium.
-5. Re-run step 5 — the headless script now inherits a "warm" profile.
+5. Re-run step 4 — the headless script now inherits a "warm" profile.
 
 ### `verification code` (email OTP)
 
@@ -86,17 +86,17 @@ openclaw skills install ./leads-hunt-voice
 2. On AE reply, write the value to `/tmp/lk_otp.txt`.
 3. Script reads, deletes the file, continues.
 
-If the AE misses the 60s window, the script aborts. Restart step 5.
+If the AE misses the 60s window, the script aborts. Restart step 4.
 
 ### `sales_nav_query.py BytePlus` returns `needs-reauth` after setup claimed success
 
 **Cause**: The setup script's success heuristic is fragile (see leads-hunt SKILL.md). It logged a "looks good" but actually didn't establish a full session.
 
-**Fix**: Re-run step 5 from scratch. If it lies again twice in a row, fall back to manual seasoning (see captcha case above).
+**Fix**: Re-run step 4 from scratch. If it lies again twice in a row, fall back to manual seasoning (see captcha case above).
 
 ---
 
-## BD-corporate Sales Nav SSO (step 6)
+## BD-corporate Sales Nav SSO (step 5)
 
 ### `crmStatus` missing in the response payload
 
@@ -115,32 +115,7 @@ The wizard can complete without this — just warn the AE that Layer 3 dedup wil
 
 ---
 
-## LLM key validation (step 4)
-
-### HTTP 401 / `invalid_api_key`
-
-**Cause**: Wrong key, expired key, or wrong provider for the key.
-
-**Fix**: Re-prompt. Common gotchas:
-- `sk-...` is OpenAI; `sk-ant-...` is Anthropic. Don't cross-wire.
-- AWS keys must be a 20-char `AKIA...` access key + 40-char secret + region.
-- If using Bedrock, the IAM principal needs `bedrock:InvokeModel` on the chosen `BEDROCK_MODEL`.
-
-### HTTP 429 (rate limit) on the test call
-
-**Cause**: AE's account is throttled or out of credits.
-
-**Fix**: This isn't an auth failure — the key works. Note it as "validated, but rate-limited" and proceed. The pipeline will surface real errors at runtime.
-
-### `boto3` not installed for Bedrock
-
-**Cause**: `test_llm_call.py` falls back to `boto3` for Bedrock; we don't ship a stdlib SigV4 implementation.
-
-**Fix**: `pip install boto3` in the same Python env that runs OpenClaw skills. Or switch the AE to OpenAI/Anthropic if they don't want the dep.
-
----
-
-## Cron registration (step 8)
+## Cron registration (step 7)
 
 ### `openclaw cron add` succeeds but jobs never fire
 

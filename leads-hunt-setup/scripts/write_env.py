@@ -11,6 +11,9 @@ Behaviour:
   - Idempotent: keys already matching argv values are unchanged.
   - Prints a redacted summary (last 4 chars of each value, prefixed with `***`).
 
+No LLM keys needed — OpenClaw provides the model. Expected keys for this
+pack are LARK_*, LINKEDIN_*, BYTEDANCE_CORP_*, and any cron-related config.
+
 Workspace resolves from $OPENCLAW_WORKSPACE, default ~/.openclaw/workspace.
 Override with --workspace <path>.
 """
