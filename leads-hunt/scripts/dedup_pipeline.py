@@ -42,7 +42,7 @@ sys.path.insert(0, str(SCRIPT_DIR))
 
 from sales_nav_check import check as sales_nav_check  # noqa: E402
 
-# TODO(phase2): kb.py is built in Phase 2. For now we import lazily inside
+# kb.py is imported lazily inside
 # functions so that the module is importable even before kb.py exists, and
 # we degrade gracefully when it's missing.
 
@@ -86,7 +86,7 @@ def _load_skip_list(cfg) -> set[str]:
 def _kb_already_seen(name: str, cfg) -> bool:
     """Layer 3: LLM-judge against kb.md historical shipments.
 
-    TODO(phase2): kb.py provides already_seen(name, cfg) -> bool that walks
+    kb.py provides already_seen(name, cfg) -> bool that walks
     kb.md's "## Shipped" section, normalises company names, and returns True
     if the candidate has been shipped before. For now, returns False (no-op)
     if kb module isn't built yet — Phase C still runs but Layer 3 is a pass-through.

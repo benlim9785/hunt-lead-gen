@@ -107,7 +107,7 @@ def deliver(cfg, dry_run: bool = False) -> int:
 
     if not dry_run:
         # Append shipped leads to kb.md so Phase C can dedup against them on future runs.
-        # TODO(phase2): kb.append_shipped(rows, today, cfg) — Phase 2 builds kb.py.
+        # kb.append_shipped(rows, today, cfg) writes shipped leads to kb.md.
         kb = _kb()
         if kb is not None:
             try:

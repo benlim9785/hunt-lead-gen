@@ -82,7 +82,7 @@ def _read_feedback_tail(topic: str, cfg, n_entries: int = 5) -> str:
 def _format_kb_patterns(patterns: dict | None) -> str:
     """Format kb.read_recent_patterns() output as a readable brief section.
 
-    TODO(phase2): kb.read_recent_patterns(topic, days, cfg) is built in
+    kb.read_recent_patterns(topic, days, cfg) lives in
     Phase 2. Expected schema (mirrors the legacy feedback-summary):
         {
           "window_days": 14,
@@ -206,7 +206,7 @@ def print_brief(topic: str, cfg, dry_run: bool = False) -> int:
     print()
 
     # Pull pattern signals from kb.md (your good/bad notes from prior shipments).
-    # TODO(phase2): kb.read_recent_patterns is implemented in Phase 2.
+    # kb.read_recent_patterns is implemented in kb.py.
     kb = _kb()
     patterns = None
     if kb is not None:
@@ -244,12 +244,163 @@ def print_brief(topic: str, cfg, dry_run: bool = False) -> int:
     return 0
 
 
+# ---------------------------------------------------------------------------
+# Fan-out mode (Phase B parallel sub-agent dispatch)
+# ---------------------------------------------------------------------------
+#
+# In `brief` mode (the original behaviour), this script prints ONE topic's
+# brief and the parent agent does the research itself, sequentially across
+# topics. That serializes the parent's context window and accumulates per-topic
+# browser/search noise.
+#
+# In `fanout-prompt` mode, this script prints a SINGLE master prompt which
+# tells the parent agent to spawn N sub-agents (one per enabled topic) using
+# `delegate_task`. Each sub-agent gets exactly one topic's brief inline and
+# writes its own candidates JSON. The parent stays clean and runs Phase C
+# dedup once all sub-agents return.
+#
+# The script itself never calls delegate_task — it just emits the prompt that
+# instructs the agent to do so.
+
+
+def _render_brief_string(topic_slug: str, cfg) -> str:
+    """Capture print_brief() output for a single topic as a string.
+    Uses stdout redirection so print_brief stays byte-identical to the
+    original `brief` mode behaviour.
+    """
+    import io
+    import contextlib
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        print_brief(topic_slug, cfg, dry_run=False)
+    return buf.getvalue()
+
+
+# Max sub-agents per delegate_task call. The agent runtime caps concurrent
+# fan-out at 3, so larger topic registries must be issued as multiple
+# sequential delegate_task calls of <= 3 tasks each.
+_FANOUT_BATCH_CAP = 3
+
+
+def _fanout_task_block(topic_slug: str, brief_md: str) -> str:
+    """Render a single delegate_task entry (Python dict literal, indented)."""
+    # Triple-quoted string in the prompt — escape any embedded triple quotes
+    # in the brief so the literal we emit is valid Python.
+    safe_brief = brief_md.replace('"""', '\\"\\"\\"')
+    return (
+        '  {\n'
+        f'    "goal": "Phase B discovery for topic \'{topic_slug}\': research, surface 10-20 candidates, write JSON to disk.",\n'
+        f'    "context": """{safe_brief}""",\n'
+        '    "toolsets": ["web", "browser", "terminal", "file"]\n'
+        '  }'
+    )
+
+
+def _batch(items: list, n: int) -> list[list]:
+    return [items[i:i + n] for i in range(0, len(items), n)]
+
+
+def emit_fanout_prompt(cfg, enabled_topics: list[dict]) -> str:
+    """Build the master prompt that tells the parent agent to fan out
+    Phase B research across N sub-agents via delegate_task.
+
+    Args:
+        cfg: full config dict (from _config.load_config()).
+        enabled_topics: list of topic dicts (from topic_registry.enabled_topics()).
+                        Each must have a 'slug' key.
+
+    Returns:
+        A single multi-line string the agent will receive verbatim.
+    """
+    sys.path.insert(0, str(SCRIPT_DIR))
+    from topic_registry import cfg_for_topic  # local import to avoid circulars
+
+    n = len(enabled_topics)
+    slugs = [t["slug"] for t in enabled_topics]
+    batches = _batch(slugs, _FANOUT_BATCH_CAP)
+    n_batches = len(batches)
+
+    lines: list[str] = []
+    lines.append("You are running leads-hunt Phase B discovery in fan-out mode.")
+    lines.append("")
+    lines.append(
+        f"There are {n} enabled topics: {', '.join(slugs)}. "
+        f"Spawn {n} sub-agents in parallel via `delegate_task`."
+    )
+    lines.append("Each sub-agent gets exactly ONE topic's brief and is responsible for:")
+    lines.append("  - doing the web research (Brave search, browser navigation, vendor blog scraping)")
+    lines.append("  - producing a candidates JSON list (10-20 candidates per topic)")
+    lines.append("  - writing the JSON to <LEADS_HUNT_HOME>/data/lead-gen/candidates/<topic-slug>-<YYYY-MM-DD>.json")
+    lines.append("  - returning a one-line summary for the parent agent (e.g. 'aigc-visual: 14 candidates written')")
+    lines.append("")
+    lines.append("## Concurrency / batching")
+    lines.append("")
+    lines.append(
+        f"The agent runtime caps concurrent fan-out at {_FANOUT_BATCH_CAP} sub-agents per "
+        "`delegate_task` call. With "
+        f"{n} topics that means **{n_batches} sequential `delegate_task` call(s)**, each "
+        f"with up to {_FANOUT_BATCH_CAP} tasks."
+    )
+    lines.append("")
+    lines.append(
+        "Do NOT collapse to a single sub-agent doing all topics — the parallelism is the point. "
+        "Do NOT skip topics. Issue all batches before moving on to Phase C."
+    )
+    lines.append("")
+    lines.append("## delegate_task call shape")
+    lines.append("")
+    lines.append(
+        "Use this exact call shape for each batch (Python pseudocode — adapt to your "
+        "agent harness's actual API):"
+    )
+    lines.append("")
+
+    # Emit each batch as a separate delegate_task code block, with the brief
+    # for each topic inlined verbatim as the sub-agent's `context`.
+    for batch_i, batch_slugs in enumerate(batches, start=1):
+        if n_batches > 1:
+            lines.append(f"### Batch {batch_i} of {n_batches} ({len(batch_slugs)} task(s))")
+            lines.append("")
+        lines.append("```python")
+        lines.append("delegate_task(tasks=[")
+        task_blocks = []
+        for slug in batch_slugs:
+            topic_cfg = cfg_for_topic(cfg, slug)
+            brief_md = _render_brief_string(slug, topic_cfg)
+            task_blocks.append(_fanout_task_block(slug, brief_md))
+        lines.append(",\n".join(task_blocks))
+        lines.append("])")
+        lines.append("```")
+        lines.append("")
+
+    lines.append("## After fan-out completes")
+    lines.append("")
+    lines.append("Once ALL sub-agents have returned (across all batches), each topic's")
+    lines.append("candidates JSON should be on disk at the paths above. Then YOU (the parent)")
+    lines.append("run Phase C dedup yourself — do NOT delegate this:")
+    lines.append("")
+    lines.append("```bash")
+    lines.append("python3 scripts/run_topic.py --phase dedup-all")
+    lines.append("```")
+    lines.append("")
+    lines.append(
+        "If any sub-agent reports failure (no JSON written, fewer than 5 candidates, "
+        "tool errors), surface that in your final summary to the user but still proceed "
+        "with Phase C on the topics that did succeed."
+    )
+    return "\n".join(lines)
+
+
 if __name__ == "__main__":
     import argparse
     import os
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--topic", required=True,
-                    help="Topic slug (validated against topic_registry at runtime).")
+    ap.add_argument("--mode", choices=["brief", "fanout-prompt"], default="brief",
+                    help="brief: print a single topic's brief (default, current behaviour). "
+                         "fanout-prompt: print a master prompt that drives the parent agent "
+                         "to spawn one delegate_task sub-agent per enabled topic.")
+    ap.add_argument("--topic",
+                    help="Topic slug (required in --mode brief; ignored in --mode fanout-prompt).")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--home", help="Override LEADS_HUNT_HOME (per-AE workspace).")
     args = ap.parse_args()
@@ -257,8 +408,22 @@ if __name__ == "__main__":
         os.environ["LEADS_HUNT_HOME"] = args.home
     sys.path.insert(0, str(SCRIPT_DIR))
     from _config import load_config
-    from topic_registry import get_topic, cfg_for_topic
+    from topic_registry import get_topic, cfg_for_topic, enabled_topics
     cfg = load_config()
+
+    if args.mode == "fanout-prompt":
+        topics = enabled_topics(cfg)
+        if not topics:
+            print("No enabled topics found in topic_registry.", file=sys.stderr)
+            sys.exit(2)
+        sys.stdout.write(emit_fanout_prompt(cfg, topics))
+        sys.stdout.write("\n")
+        sys.exit(0)
+
+    # mode == "brief": original behaviour, byte-identical.
+    if not args.topic:
+        print("--topic is required in --mode brief", file=sys.stderr)
+        sys.exit(2)
     if get_topic(args.topic, cfg) is None:
         print(f"Unknown or disabled topic: {args.topic!r}", file=sys.stderr)
         sys.exit(2)
