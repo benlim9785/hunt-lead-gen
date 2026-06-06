@@ -24,21 +24,17 @@ This skill does **not** collect or store any LLM provider API keys. The host age
 - **Same treatment as #1 and #2**, against the same `browser-profile/` directory but a separate cookie set for the corporate seat.
 - **Note**: BD-corporate creds are subject to BD's own security policy. If BD requires MFA on every login (as opposed to a remembered device), expect the AE to re-do the BD-SSO step frequently.
 
-### 4. Lark target chat ID (`LARK_HUNT_CHANNEL`)
-
-- **Not strictly secret**, but stored in `<workspace>/leads-hunt/.env`, mode `0600`, atomic write via temp-file rename.
-- The chat ID alone doesn't grant access — Lark posting requires the bound bot's token, which is managed by OpenClaw Gateway, not this skill.
-
-### 5. Lark bot tokens
+### 4. Lark bot tokens
 
 - **NOT handled by this skill at all**. OpenClaw Gateway owns Lark API tokens. The wizard only verifies that a feishu binding exists — it never reads or relays the token.
 - If the AE asks to rotate the Lark token, the answer is "rerun `openclaw onboard`", not "rerun `leads-hunt-setup`".
+- The Lark target chat the daily digest delivers to is the AE's bound home channel from `openclaw agents bindings` — not configured by this skill.
 
 ## File-system layout (after setup)
 
 ```
 <workspace>/leads-hunt/
-├── .env                    # mode 0600. LARK_HUNT_CHANNEL + non-secret config.
+├── .env                    # mode 0600. Non-secret config only.
 ├── kb.md                   # NOT secret, but per-AE business intel.
 ├── style.md                # NOT secret. AE's outreach voice.
 ├── browser-profile/        # CONTAINS LinkedIn + BD session cookies.

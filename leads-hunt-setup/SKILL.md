@@ -1,6 +1,6 @@
 ---
 name: leads-hunt-setup
-description: "First-run onboarding wizard for a new AE installing leads-hunt-pack on OpenClaw. Walks through workspace init, LinkedIn login, BD Sales Nav SSO, digest target chat, kb.md init, topic scaffolding, cron registration."
+description: "First-run onboarding wizard for a new AE installing leads-hunt-pack on OpenClaw. Walks through workspace init, LinkedIn login, BD Sales Nav SSO, kb.md init, topic scaffolding, cron registration."
 version: 0.1.0
 author: Ben Lim
 license: MIT
@@ -10,7 +10,7 @@ license: MIT
 
 A conversational, Lark-driven onboarding wizard. Triggered when a new BytePlus AE says something like *"clawdia, set me up for leads hunt"*. Targets ~30 minutes end-to-end.
 
-This skill is a **protocol the agent follows**, not a single script. The agent reads SKILL.md, drives a 7-step Q&A in Lark, and shells out to helper scripts in `scripts/` for the actual work.
+This skill is a **protocol the agent follows**, not a single script. The agent reads SKILL.md, drives a 6-step Q&A in Lark, and shells out to helper scripts in `scripts/` for the actual work.
 
 OpenClaw provides the LLM — we don't ask the AE for any LLM provider keys. Any drafting, scoring, or per-topic research the pack needs is performed by the host agent inline.
 
@@ -20,7 +20,7 @@ OpenClaw provides the LLM — we don't ask the AE for any LLM provider keys. Any
 - Re-running specific steps after a partial failure (the wizard supports resuming).
 - After a BD-corp password change or LinkedIn re-auth.
 
-If the AE has already onboarded and just wants a single piece (e.g. re-login LinkedIn), the agent should skip ahead to that step instead of doing the full 7-step flow. The wizard is idempotent — re-running steps 1-3 is cheap.
+If the AE has already onboarded and just wants a single piece (e.g. re-login LinkedIn), the agent should skip ahead to that step instead of doing the full 6-step flow. The wizard is idempotent — re-running steps 1-2 is cheap.
 
 ## Prerequisites (check BEFORE step 1)
 
@@ -36,7 +36,7 @@ If the OpenClaw CLI is not in PATH at all, print: *"OpenClaw not found in PATH; 
 
 Exit 0 → green light to start step 1. Exit 1 → repair and re-run.
 
-## The 7-step wizard
+## The 6-step wizard
 
 ### Step 1 — Detect workspace + create state dir
 
@@ -67,21 +67,7 @@ cp "<leads-hunt-outreach-skill>/references/style.md" "<workspace>/leads-hunt/sty
 
 Do NOT pre-fill the voice file. It stays blank-slate; the AE fills it later via `leads-hunt-voice`.
 
-### Step 3 — Collect Lark target chat
-
-Already bound at the OpenClaw level (verified in prereqs). Ask:
-
-> "Which Lark chat should leads digests deliver to? Default: your home channel from `openclaw agents bindings` (oc_xxxx). Reply with a chat ID, or 'default'."
-
-Write to `.env`:
-
-```bash
-python3 scripts/write_env.py LARK_HUNT_CHANNEL=oc_xxx
-```
-
-The script merges into existing `.env` non-destructively (preserves other keys).
-
-### Step 4 — LinkedIn login (personal seat)
+### Step 3 — LinkedIn login (personal seat)
 
 Run from the `leads-hunt` skill's scripts dir (NOT this skill — we don't duplicate playwright code):
 
@@ -95,7 +81,7 @@ Q&A flow over Lark:
 3. If LinkedIn challenges with email OTP, the script writes a status file and waits up to 60s for `/tmp/lk_otp.txt`. Agent prompts the AE: *"LinkedIn sent an OTP to your email. Paste it here within 60 seconds."*. When AE replies, agent writes the value to `/tmp/lk_otp.txt`. The setup script picks it up and continues.
 4. If `Wrong email or password` appears in the script output → re-prompt creds.
 5. If `Check your LinkedIn app` appears → app-push challenge. Tell the AE to approve from their LinkedIn mobile app, then continue.
-6. If `Let's do a quick security check` (captcha) appears → fall back to **manual seasoning**: tell the AE to open Chromium on the same machine, log in to LinkedIn manually once via `<workspace>/leads-hunt/browser-profile/`, then re-run step 4. See `references/troubleshooting.md`.
+6. If `Let's do a quick security check` (captcha) appears → fall back to **manual seasoning**: tell the AE to open Chromium on the same machine, log in to LinkedIn manually once via `<workspace>/leads-hunt/browser-profile/`, then re-run step 3. See `references/troubleshooting.md`.
 
 Verify with:
 
@@ -105,15 +91,15 @@ python3 <leads-hunt-skill>/scripts/sales_nav_query.py BytePlus
 
 Must return JSON. If it returns `needs-reauth`, the setup script lied — the heuristic is fragile. Re-run setup. Three strikes → escalate to troubleshooting doc.
 
-**OTP timeout**: if the AE doesn't paste OTP within 60s, the script aborts. Keep the Lark conversation alive and re-prompt; restart step 4.
+**OTP timeout**: if the AE doesn't paste OTP within 60s, the script aborts. Keep the Lark conversation alive and re-prompt; restart step 3.
 
-### Step 5 — BD-corporate Sales Nav SSO
+### Step 4 — BD-corporate Sales Nav SSO
 
 Same script, different seat. Ask:
 
 > "Now your BD-corporate Sales Nav login. Paste your BD email."
 
-Same OTP fallback flow as step 4. After login, verify Salesforce sync:
+Same OTP fallback flow as step 3. After login, verify Salesforce sync:
 
 ```bash
 python3 <leads-hunt-skill>/scripts/sales_nav_query.py BytePlus
@@ -125,7 +111,7 @@ Look for `crmStatus` in the response payload. If absent, the AE's seat does NOT 
 
 Allow them to proceed (it's not blocking, just degraded).
 
-### Step 6 — Topic file scaffolding
+### Step 5 — Topic file scaffolding
 
 Ask:
 
@@ -137,7 +123,7 @@ Ask:
 
 Either path is valid. Don't block.
 
-### Step 7 — Schedule cron jobs
+### Step 6 — Schedule cron jobs
 
 Show the AE the 4 cron commands from `leads-hunt`'s SKILL.md (Phase A 07:30, B 08:00, C 09:00, D 09:30). Ask:
 
@@ -157,17 +143,17 @@ If the AE says no, save commands to `<workspace>/leads-hunt/cron-suggestions.txt
 
 ## Final message
 
-When all 7 steps pass, send to Lark:
+When all 6 steps pass, send to Lark:
 
 > "All set. Voice file at `<workspace>/leads-hunt/style.md` is empty. Chat with me anytime to teach me your style — try *'add this to my outreach voice: [paste a real message]'* or *'set my voice rhythm to: [describe how you write]'*. You can do this now, later, or iteratively."
 
 ## Pitfalls (encoded — read before driving the wizard)
 
-1. **LinkedIn captcha season**. If headless setup hits a captcha (`Let's do a quick security check`), the AE MUST log in manually from a non-headless Chromium against the same `<workspace>/leads-hunt/browser-profile/` directory ONCE to season the profile. Then retry step 4. Document this clearly when the failure occurs; AEs find it counterintuitive.
+1. **LinkedIn captcha season**. If headless setup hits a captcha (`Let's do a quick security check`), the AE MUST log in manually from a non-headless Chromium against the same `<workspace>/leads-hunt/browser-profile/` directory ONCE to season the profile. Then retry step 3. Document this clearly when the failure occurs; AEs find it counterintuitive.
 
-2. **OTP timeout (60s)**. If the AE is slow pasting OTP, the script aborts. The agent's job is to keep the Lark conversation responsive — prompt explicitly with a deadline ("paste OTP in the next minute or I'll restart"). On abort, re-run step 4 from scratch. Don't try to resume mid-OTP-flow.
+2. **OTP timeout (60s)**. If the AE is slow pasting OTP, the script aborts. The agent's job is to keep the Lark conversation responsive — prompt explicitly with a deadline ("paste OTP in the next minute or I'll restart"). On abort, re-run step 3 from scratch. Don't try to resume mid-OTP-flow.
 
-3. **OpenClaw cron daemon not running**. `openclaw cron add` returns success even if the daemon is dead. After step 7, ALWAYS run `openclaw cron list` and confirm the 4 jobs are listed AND the daemon column shows `running`. If not, point at `openclaw doctor --fix`.
+3. **OpenClaw cron daemon not running**. `openclaw cron add` returns success even if the daemon is dead. After step 6, ALWAYS run `openclaw cron list` and confirm the 4 jobs are listed AND the daemon column shows `running`. If not, point at `openclaw doctor --fix`.
 
 4. **Sibling skill discovery**. If `leads-hunt` is installed `--global` and `leads-hunt-setup` is workspace-local (or vice versa), path resolution between them can fail. Every script that needs to reach into a sibling skill accepts a `--leads-hunt-skill <path>` override. The agent should resolve the path from `openclaw skills list --paths` and pass it explicitly.
 
@@ -198,10 +184,9 @@ The wizard is step-addressable. If the AE drops mid-flow and comes back, the age
 2. Inspect `<workspace>/leads-hunt/` for what already exists:
    - `kb.md` exists → skip step 1.
    - `style.md` exists → skip step 2.
-   - `.env` has `LARK_HUNT_CHANNEL` → skip step 3.
-   - `browser-profile/` has cookies AND `sales_nav_query.py BytePlus` returns JSON → skip steps 4/5.
-   - At least one enabled topic file → skip step 6.
-   - `openclaw cron list` shows 4 leads-hunt jobs → skip step 7.
+   - `browser-profile/` has cookies AND `sales_nav_query.py BytePlus` returns JSON → skip steps 3/4.
+   - At least one enabled topic file → skip step 5.
+   - `openclaw cron list` shows 4 leads-hunt jobs → skip step 6.
 3. Resume from the first unfinished step.
 
-Ask the AE before skipping a step: *"Looks like step 4 is already done — your LinkedIn session is live. Skip it?"* — give them an out in case they want to re-do it (e.g. cookie rotation).
+Ask the AE before skipping a step: *"Looks like step 3 is already done — your LinkedIn session is live. Skip it?"* — give them an out in case they want to re-do it (e.g. cookie rotation).

@@ -1,6 +1,6 @@
 # Troubleshooting — leads-hunt-setup
 
-Common failure modes encountered during the 7-step wizard, with fix recipes. Cross-reference [security.md](security.md) for credential-handling questions.
+Common failure modes encountered during the 6-step wizard, with fix recipes. Cross-reference [security.md](security.md) for credential-handling questions.
 
 ---
 
@@ -48,7 +48,7 @@ openclaw skills install ./leads-hunt-voice
 
 ---
 
-## LinkedIn login (step 4)
+## LinkedIn login (step 3)
 
 ### `Wrong email or password`
 
@@ -75,7 +75,7 @@ openclaw skills install ./leads-hunt-voice
    ```
 3. Manually log in to https://www.linkedin.com/ in that Chromium window. Solve any captcha by hand.
 4. Close Chromium.
-5. Re-run step 4 — the headless script now inherits a "warm" profile.
+5. Re-run step 3 — the headless script now inherits a "warm" profile.
 
 ### `verification code` (email OTP)
 
@@ -86,17 +86,17 @@ openclaw skills install ./leads-hunt-voice
 2. On AE reply, write the value to `/tmp/lk_otp.txt`.
 3. Script reads, deletes the file, continues.
 
-If the AE misses the 60s window, the script aborts. Restart step 4.
+If the AE misses the 60s window, the script aborts. Restart step 3.
 
 ### `sales_nav_query.py BytePlus` returns `needs-reauth` after setup claimed success
 
 **Cause**: The setup script's success heuristic is fragile (see leads-hunt SKILL.md). It logged a "looks good" but actually didn't establish a full session.
 
-**Fix**: Re-run step 4 from scratch. If it lies again twice in a row, fall back to manual seasoning (see captcha case above).
+**Fix**: Re-run step 3 from scratch. If it lies again twice in a row, fall back to manual seasoning (see captcha case above).
 
 ---
 
-## BD-corporate Sales Nav SSO (step 5)
+## BD-corporate Sales Nav SSO (step 4)
 
 ### `crmStatus` missing in the response payload
 
@@ -115,7 +115,7 @@ The wizard can complete without this — just warn the AE that Layer 3 dedup wil
 
 ---
 
-## Cron registration (step 7)
+## Cron registration (step 6)
 
 ### `openclaw cron add` succeeds but jobs never fire
 
