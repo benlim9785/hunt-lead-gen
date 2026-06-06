@@ -6,7 +6,7 @@ Portable BytePlus AE lead-generation skill pack for OpenClaw. Lark-chat-driven, 
 
 In your Lark DM with your OpenClaw agent:
 
-> **clawdia, install this skill pack: `https://github.com/benlim9785/leads-hunt-pack`**
+> **clawdia, install this skill pack: `https://github.com/benlim9785/hunt-lead-gen`**
 
 That's it. OpenClaw fetches all 5 skills and registers them.
 
