@@ -1,0 +1,43 @@
+{
+  "version": "0.1.0-openclaw",
+  "per_topic_ceiling": 5,
+  "score_floor": 8,
+  "candidate_target_per_topic": 18,
+  "salesforce_cache_ttl_hours": 24,
+  "candidates_dir_ttl_days": 14,
+  "run_log_ttl_days": 30,
+  "smoke_test_query": "Microsoft",
+  "paths": {
+    "skip_list": "{LEADS_HUNT_HOME}/skip-list.txt",
+    "lead_gen_root": "{LEADS_HUNT_HOME}/data/lead-gen",
+    "candidates_template": "candidates/{topic}-{date}.json",
+    "csv_template": "leads-{topic}-{date}.csv",
+    "aggregate_csv_template": "leads-aggregate-{date}.csv",
+    "sales_nav_cache": "sales-nav-cache.jsonl",
+    "run_log_template": "run-log-{date}.txt",
+    "feedback_template": "feedback-{topic}.md",
+    "browser_profile": "{LEADS_HUNT_HOME}/browser-profile/sales-nav",
+    "kb": "{LEADS_HUNT_HOME}/kb.md"
+  },
+  "external": {
+    "sales_nav_query_script": "{SKILL_DIR}/scripts/sales_nav_query.py",
+    "sales_nav_setup_script": "{SKILL_DIR}/scripts/sales_nav_session_setup.py"
+  },
+  "day_type_map": {
+    "0": "A",
+    "1": "B",
+    "2": "C",
+    "3": "D",
+    "4": "E",
+    "5": "A",
+    "6": "B"
+  },
+  "day_type_methods": {
+    "A": "ProductHunt & launches",
+    "B": "Regional discovery",
+    "C": "Agencies & services",
+    "D": "YC / accelerator hunting",
+    "E": "SaaS feature additions"
+  },
+  "negative_blacklist_keywords": []
+}
