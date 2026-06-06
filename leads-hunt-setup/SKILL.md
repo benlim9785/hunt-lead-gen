@@ -1,6 +1,6 @@
 ---
 name: leads-hunt-setup
-description: "First-run onboarding wizard for a new AE installing leads-hunt-pack on OpenClaw. Walks through Lark binding check, LinkedIn login, BD Sales Nav SSO, kb.md init, topic scaffolding, cron registration."
+description: "First-run onboarding wizard for a new AE installing leads-hunt-pack on OpenClaw. Walks through workspace init, LinkedIn login, BD Sales Nav SSO, digest target chat, kb.md init, topic scaffolding, cron registration."
 version: 0.1.0
 author: Ben Lim
 license: MIT
