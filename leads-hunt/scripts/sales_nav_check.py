@@ -154,9 +154,10 @@ def _sso_alert_message(cfg) -> str:
         "leads-hunt: Sales Nav session expired\n\n"
         "Cannot verify CRM today. Run:\n"
         f"  python3 {setup_script}\n\n"
-        "(Set LK_EMAIL / LK_PASSWORD in .env; if your org requires SSO,\n"
-        " also set ENABLE_CORPORATE_SSO=1 + SSO_EMAIL / SSO_PASSWORD.)\n"
-        "Reply with OTP via Lark when prompted. Will retry tomorrow."
+        "Use the leads-hunt-setup VNC login flow to refresh the shared browser "
+        "profile for LinkedIn / Sales Navigator.\n"
+        "Complete any SSO, MFA, OTP, or captcha directly inside the VNC browser, "
+        "then retry the check. Will retry tomorrow if not refreshed today."
     )
 
 

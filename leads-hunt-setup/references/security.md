@@ -1,34 +1,33 @@
 # Security — what credentials this skill handles
 
-The `leads-hunt-setup` wizard collects several secrets during onboarding. This document is the contract: what gets collected, where it's stored, and what the AE is responsible for.
+The `leads-hunt-setup` wizard handles several sensitive inputs during onboarding. This document is the contract: what gets collected, where it's stored, and what the AE is responsible for.
 
-This skill does **not** collect or store any LLM provider API keys. The host agent's LLM is configured at the OpenClaw platform level via `openclaw onboard`; nothing in this pack talks directly to OpenAI / Anthropic / Bedrock.
+This skill does **not** collect or store any LLM provider API keys. The host agent runtime is provided by AIME; nothing in this pack talks directly to OpenAI / Anthropic / Bedrock.
 
 ## Credentials collected
 
-### 1. LinkedIn personal email + password
+### 1. LinkedIn personal login
 
-- **Used by**: `<leads-hunt>/scripts/sales_nav_session_setup.py` (Playwright login flow).
-- **Stored as**: HTTP cookies inside `<workspace>/leads-hunt/browser-profile/` (Chromium persistent context). The plaintext password is **never written to disk**.
-- **Lifetime**: cookies persist until LinkedIn invalidates them (typically weeks-to-months of low risk activity, less under captcha pressure). Re-run the LinkedIn login step of the wizard when `sales_nav_query.py` returns `needs-reauth`.
-- **Never logged**: The setup script reads the password from stdin and passes it directly to the Playwright `page.fill(...)` call. It is not echoed, written to log files, or sent to Lark.
+- **Used by**: `<leads-hunt>/scripts/sales_nav_session_setup.py` together with the cloud-browser/VNC login flow.
+- **Stored as**: HTTP cookies inside `<workspace>/leads-hunt/browser-profile/` (Chromium persistent context). Plaintext credentials are **not written to disk** by this setup skill.
+- **Lifetime**: cookies persist until LinkedIn invalidates them. Re-run the LinkedIn login step of the wizard when `sales_nav_query.py` returns `needs-reauth`.
+- **Never logged**: credentials are entered by the AE directly into the VNC browser session, not echoed back into Lark.
 
-### 2. LinkedIn email-OTP code
+### 2. LinkedIn / Sales Nav verification challenges
 
-- **Collected via**: Lark message from the AE, written to `/tmp/lk_otp.txt`.
-- **Stored**: in `/tmp/lk_otp.txt` for at most ~60 seconds — the setup script reads, uses, and deletes the file.
-- **Cleanup**: if the script aborts (timeout, exception), `/tmp/lk_otp.txt` may persist. Wizard should clean up: `rm -f /tmp/lk_otp.txt`. The OTP is single-use anyway, so leakage risk is bounded by LinkedIn's TTL (typically 5 minutes).
+- **Handled in-browser**: MFA, OTP, app-push, or captcha challenges are completed by the AE directly inside the cloud browser session.
+- **Stored**: challenge data is not intentionally persisted by this skill outside the browser session and resulting cookies.
 
-### 3. BD-corporate email + password + OTP
+### 3. BD-corporate Sales Nav login
 
-- **Same treatment as #1 and #2**, against the same `browser-profile/` directory but a separate cookie set for the corporate seat.
-- **Note**: BD-corporate creds are subject to BD's own security policy. If BD requires MFA on every login (as opposed to a remembered device), expect the AE to re-do the BD-SSO step frequently.
+- **Same treatment as #1 and #2**, against the same `browser-profile/` directory but a separate authenticated seat.
+- **Note**: BD-corporate auth is still subject to BD's own security policy. If BD requires MFA on every login, expect the AE to re-do the BD-SSO step frequently.
 
-### 4. Lark bot tokens
+### 4. Lark / messaging tokens
 
-- **NOT handled by this skill at all**. OpenClaw Gateway owns Lark API tokens. The wizard only verifies that a feishu binding exists — it never reads or relays the token.
-- If the AE asks to rotate the Lark token, the answer is "rerun `openclaw onboard`", not "rerun `leads-hunt-setup`".
-- The Lark target chat the daily digest delivers to is the AE's bound home channel from `openclaw agents bindings` — not configured by this skill.
+- **NOT handled by this skill at all**. AIME and the surrounding messaging integrations own any required messaging credentials.
+- If the AE asks to rotate a messaging token or rebind an integration, handle that through the relevant AIME integration flow rather than this skill.
+- The destination for daily digests is not configured by storing a secret in this setup skill.
 
 ## File-system layout (after setup)
 
@@ -41,7 +40,7 @@ This skill does **not** collect or store any LLM provider API keys. The host age
 │   ├── Default/Cookies     # SQLite — readable by anyone with FS access.
 │   └── ...
 ├── data/                   # Cached lead candidates, run logs.
-└── cron-suggestions.txt    # Plain text cron commands (only if cron step declined).
+└── cron-suggestions.txt    # Plain text scheduler commands (only if scheduler step declined).
 ```
 
 ## What the AE is responsible for
@@ -65,10 +64,10 @@ This skill does **not** collect or store any LLM provider API keys. The host age
 
 ## What this skill explicitly does NOT do
 
-- Does not collect or store LLM provider API keys. The host agent's LLM is the platform's responsibility, configured via `openclaw onboard`.
+- Does not collect or store LLM provider API keys. The host agent runtime is AIME's responsibility.
 - Does not transmit credentials to Nous Research or any third party — credentials only go to the provider they belong to (LinkedIn → linkedin.com, BD-corp SSO → BD's IdP, etc.).
-- Does not write credentials to OpenClaw's central state (Gateway, SQLite). All workspace secrets are workspace-local.
-- Does not encrypt `.env` at rest. Mode 0600 is the only protection. AEs who want stronger guarantees should run inside a LUKS-encrypted home dir or equivalent.
+- Does not write credentials to any central platform state on behalf of the AE. All workspace secrets are workspace-local.
+- Does not encrypt `.env` at rest. Mode 0600 is the only protection. AEs who want stronger guarantees should run inside an encrypted home dir or equivalent.
 
 ## Audit trail
 

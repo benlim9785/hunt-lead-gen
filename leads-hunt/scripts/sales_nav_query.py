@@ -2,9 +2,12 @@
 Sales Nav company search using the persistent browser profile.
 
 Reuses $LEADS_HUNT_HOME/browser-profile/sales-nav/ — no credentials needed.
-If the upstream session has expired (LinkedIn login wall, checkpoint, or a
-corporate SSO host redirect), exits with code 3 and prints "needs-reauth"
-so the caller can trigger sales_nav_session_setup.py to refresh.
+Before launching Playwright, this script inspects Chromium's Cookies SQLite DB
+for LinkedIn auth cookies. If the live VNC browser is using a different
+Chromium profile path, the script will sync the cookie DB into the leads-hunt
+profile first. If no valid auth cookies can be found, exits with code 3 and
+prints "needs-reauth" so the caller can ask the AE to log in via VNC again and
+rerun sales_nav_session_setup.py to verify the refreshed profile.
 
 Usage:
   python3 sales_nav_query.py "Acme Corp"
@@ -40,6 +43,7 @@ if _args.home:
     os.environ["LEADS_HUNT_HOME"] = _args.home
 
 from _config import load_config  # noqa: E402
+from _linkedin_session import ensure_session_profile  # noqa: E402
 
 CFG = load_config()
 PROFILE_DIR = CFG["paths"]["browser_profile"]
@@ -54,6 +58,11 @@ QUERY = _args.company
 
 
 async def main():
+    preflight = ensure_session_profile(PROFILE_DIR)
+    if not preflight["ok"]:
+        print("needs-reauth", file=sys.stderr)
+        sys.exit(3)
+
     found_response = None
     async with async_playwright() as p:
         ctx = await p.chromium.launch_persistent_context(
@@ -82,7 +91,27 @@ async def main():
         await page.goto(target, wait_until="domcontentloaded", timeout=30000)
         await page.wait_for_timeout(10000)
 
-        if SSO_HOST in page.url or "/login" in page.url or "/checkpoint" in page.url:
+        lower_url = page.url.lower()
+        title = await page.title()
+        body = await page.evaluate("document.body.innerText")
+        lower_title = (title or "").lower()
+        lower_body = (body or "").lower()
+
+        logged_out = (
+            SSO_HOST in lower_url
+            or "/login" in lower_url
+            or "/checkpoint" in lower_url
+            or "/authwall" in lower_url
+        )
+        sales_nav_ui_detected = (
+            "linkedin.com/sales/" in lower_url
+            or "sales navigator" in lower_title
+            or "account lists" in lower_body
+            or "lead lists" in lower_body
+            or "saved searches" in lower_body
+        )
+
+        if logged_out or not sales_nav_ui_detected:
             print("needs-reauth", file=sys.stderr)
             await ctx.close()
             sys.exit(3)
@@ -99,10 +128,6 @@ async def main():
         print(json.dumps({"query": QUERY, "found": False, "in_crm": None}))
         sys.exit(1)
 
-    # Pick best match: prefer any element whose name shares a token with the
-    # query AND has crmStatus.imported = True. This is conservative for dedup
-    # (better safe than miss). If no in-CRM match by token, fall back to the
-    # first result.
     import re
 
     def tokenize(s: str) -> set:

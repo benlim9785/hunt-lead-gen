@@ -9,7 +9,7 @@ Creates:
 Idempotent: re-running on an existing dir is a no-op unless --force is given,
 in which case kb.md is rewritten to the empty skeleton (existing content lost).
 
-Workspace path resolves from $OPENCLAW_WORKSPACE, default ~/.openclaw/workspace.
+Workspace path resolves from $AIME_WORKSPACE_PATH when available.
 Override with --workspace <path>.
 """
 from __future__ import annotations
@@ -48,15 +48,15 @@ reads recent entries from here.)_
 def resolve_workspace(arg: str | None) -> Path:
     if arg:
         return Path(arg).expanduser().resolve()
-    env = os.environ.get("OPENCLAW_WORKSPACE")
+    env = os.environ.get("AIME_WORKSPACE_PATH")
     if env:
         return Path(env).expanduser().resolve()
-    return (Path.home() / ".openclaw" / "workspace").resolve()
+    return (Path.home() / "aime-workspace").resolve()
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--workspace", help="Override OPENCLAW_WORKSPACE")
+    ap.add_argument("--workspace", help="Override AIME_WORKSPACE_PATH")
     ap.add_argument("--force", action="store_true", help="Rewrite kb.md skeleton even if non-empty")
     args = ap.parse_args()
 
