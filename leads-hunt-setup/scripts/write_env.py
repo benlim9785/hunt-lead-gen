@@ -11,10 +11,10 @@ Behaviour:
   - Idempotent: keys already matching argv values are unchanged.
   - Prints a redacted summary (last 4 chars of each value, prefixed with `***`).
 
-No LLM keys needed — OpenClaw provides the model. Expected keys for this
-pack are LARK_*, LINKEDIN_*, BYTEDANCE_CORP_*, and any cron-related config.
+No LLM keys needed — AIME provides the host runtime. Expected keys for this
+pack are LARK_*, LINKEDIN_*, BYTEDANCE_CORP_*, and any scheduler-related config.
 
-Workspace resolves from $OPENCLAW_WORKSPACE, default ~/.openclaw/workspace.
+Workspace resolves from $AIME_WORKSPACE_PATH when available.
 Override with --workspace <path>.
 """
 from __future__ import annotations
@@ -29,10 +29,10 @@ from pathlib import Path
 def resolve_workspace(arg: str | None) -> Path:
     if arg:
         return Path(arg).expanduser().resolve()
-    env = os.environ.get("OPENCLAW_WORKSPACE")
+    env = os.environ.get("AIME_WORKSPACE_PATH")
     if env:
         return Path(env).expanduser().resolve()
-    return (Path.home() / ".openclaw" / "workspace").resolve()
+    return (Path.home() / "aime-workspace").resolve()
 
 
 def parse_existing(path: Path) -> dict[str, str]:
@@ -56,7 +56,7 @@ def redact(v: str) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--workspace", help="Override OPENCLAW_WORKSPACE")
+    ap.add_argument("--workspace", help="Override AIME_WORKSPACE_PATH")
     ap.add_argument("pairs", nargs="+", help="KEY=VALUE pairs (one or more)")
     args = ap.parse_args()
 

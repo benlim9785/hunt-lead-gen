@@ -1,6 +1,6 @@
 ---
 name: leads-hunt-setup
-description: "First-run onboarding wizard for a new AE installing leads-hunt-pack on OpenClaw. Walks through workspace init, LinkedIn login, BD Sales Nav SSO, kb.md init, topic scaffolding, cron registration."
+description: "First-run onboarding wizard for a new AE setting up leads-hunt on AIME. Walks through workspace init, LinkedIn login, BD Sales Nav SSO, kb.md init, topic scaffolding, and recurring run setup."
 author: Ben Lim
 license: MIT
 ---
@@ -11,11 +11,11 @@ A conversational, Lark-driven onboarding wizard. Triggered when a new BytePlus A
 
 This skill is a **protocol the agent follows**, not a single script. The agent reads SKILL.md, drives a 6-step Q&A in Lark, and shells out to helper scripts in `scripts/` for the actual work.
 
-OpenClaw provides the LLM — we don't ask the AE for any LLM provider keys. Any drafting, scoring, or per-topic research the pack needs is performed by the host agent inline.
+AIME provides the host agent runtime — do not ask the AE for any LLM provider keys. Any drafting, scoring, or per-topic research the pack needs is performed by the host agent inline.
 
 ## When to invoke
 
-- First install of `leads-hunt-pack` on a fresh OpenClaw.
+- First setup of `leads-hunt` for a new AE on AIME.
 - Re-running specific steps after a partial failure (the wizard supports resuming).
 - After a BD-corp password change or LinkedIn re-auth.
 
@@ -23,23 +23,12 @@ If the AE has already onboarded and just wants a single piece (e.g. re-login Lin
 
 ## Prerequisites (check BEFORE step 1)
 
-Run the prereq check first:
+Before starting, verify two things:
 
-```bash
-python3 scripts/check_prereqs.py
-```
+1. **Sibling skills are available** — the agent should be able to use all four companion skills: `leads-hunt`, `leads-hunt-outreach`, `leads-hunt-add-target`, and `leads-hunt-voice`.
+2. **Workspace is writable** — `<workspace>/leads-hunt/` must be creatable (or already exist with a recoverable `kb.md`). If `kb.md` exists with content, refuse unless the AE passes `--force`; we do NOT clobber a populated KB.
 
-It checks three things:
-
-1. **OpenClaw onboard done** — `openclaw agents bindings` must include a `feishu:` binding. If not:
-   > "First run `openclaw onboard` and bind your Lark app, then come back."
-   > Do not proceed.
-2. **Sibling skills installed** — `openclaw skills list` must show all four: `leads-hunt`, `leads-hunt-outreach`, `leads-hunt-add-target`, `leads-hunt-voice`. If any missing, tell the AE the exact `openclaw skills install ./<name>` command for each.
-3. **Workspace writable** — `<workspace>/leads-hunt/` must be creatable (or already exist with a recoverable `kb.md`). If `kb.md` exists with content, refuse unless the AE passes `--force`; we do NOT clobber a populated KB.
-
-If the OpenClaw CLI is not in PATH at all, print: *"OpenClaw not found in PATH; install OpenClaw first (see https://hermes-agent.nousresearch.com/docs)."* and abort.
-
-Exit 0 → green light to start step 1. Exit 1 → repair and re-run.
+If either prerequisite is not satisfied, stop and ask the AE to fix it before continuing.
 
 ## The 6-step wizard
 
@@ -49,7 +38,7 @@ Exit 0 → green light to start step 1. Exit 1 → repair and re-run.
 python3 scripts/init_state.py
 ```
 
-Resolves `OPENCLAW_WORKSPACE` env (default `~/.openclaw/workspace`) and creates:
+Resolves the workspace root from the current AIME environment and creates:
 - `<workspace>/leads-hunt/data/`
 - `<workspace>/leads-hunt/browser-profile/`
 - `<workspace>/leads-hunt/kb.md` with the H2 skeleton:
@@ -173,11 +162,11 @@ Ask:
 
 Either path is valid. Don't block.
 
-### Step 6 — Schedule cron jobs
+### Step 6 — Schedule recurring runs
 
-Show the AE the 4 cron commands from `leads-hunt`'s SKILL.md (Phase A 07:30, B 08:00, C 09:00, D 09:30). Ask:
+Show the AE the 4 scheduled run commands from `leads-hunt`'s SKILL.md (Phase A 07:30, B 08:00, C 09:00, D 09:30). Ask:
 
-> "Register them now? (y/n) — server timezone is `<run timedatectl>`. Times are server-local."
+> "Register them now? (y/n) — use the workspace's server-local timezone for these times."
 
 If yes:
 
@@ -185,9 +174,9 @@ If yes:
 python3 scripts/register_cron.py
 ```
 
-This wraps `openclaw cron add` for each of the 4 jobs. Idempotent — skips if a job with matching `--schedule` and `--message` substring already exists. Prints the registered job IDs.
+This registers the 4 canonical recurring jobs for the workflow. It should be idempotent and print the registered job IDs.
 
-After registration, verify with `openclaw cron list` — confirm all 4 jobs appear. If any missing, the OpenClaw cron daemon may not be running. Point at `openclaw doctor --fix`.
+After registration, verify that all 4 jobs appear in the scheduler. If any are missing, tell the AE the scheduler registration failed and they should retry or inspect the local environment before relying on automation.
 
 If the AE says no, save commands to `<workspace>/leads-hunt/cron-suggestions.txt` for later (the script accepts `--dry-run`).
 
@@ -203,9 +192,9 @@ When all 6 steps pass, send to Lark:
 
 2. **OTP timeout (60s)**. If the AE is slow pasting OTP, the script aborts. The agent's job is to keep the Lark conversation responsive — prompt explicitly with a deadline ("paste OTP in the next minute or I'll restart"). On abort, re-run step 3 from scratch. Don't try to resume mid-OTP-flow.
 
-3. **OpenClaw cron daemon not running**. `openclaw cron add` returns success even if the daemon is dead. After step 6, ALWAYS run `openclaw cron list` and confirm the 4 jobs are listed AND the daemon column shows `running`. If not, point at `openclaw doctor --fix`.
+3. **Scheduler registration can silently fail**. After step 6, always verify the recurring jobs are actually present before telling the AE automation is set up.
 
-4. **Sibling skill discovery**. If `leads-hunt` is installed `--global` and `leads-hunt-setup` is workspace-local (or vice versa), path resolution between them can fail. Every script that needs to reach into a sibling skill accepts a `--leads-hunt-skill <path>` override. The agent should resolve the path from `openclaw skills list --paths` and pass it explicitly.
+4. **Sibling skill discovery**. If the agent resolves `leads-hunt` and `leads-hunt-setup` from different installation contexts, path resolution between them can fail. Every script that needs to reach into a sibling skill accepts a `--leads-hunt-skill <path>` override. The agent should resolve the path explicitly before invoking sibling scripts.
 
 5. **Empty style.md is fine**. Step 2 creates a blank-slate `style.md`. Do NOT pre-fill it with examples or guess at the AE's voice. The wizard's final message tells the AE how to fill it later. Resist the temptation to be helpful here — a wrong voice is worse than no voice.
 
@@ -215,13 +204,12 @@ When all 6 steps pass, send to Lark:
 
 | Symptom | Fix recipe |
 |---|---|
-| `openclaw: command not found` | Install OpenClaw first; this skill assumes the CLI is in PATH. |
-| `feishu binding not found` | Run `openclaw onboard`. |
-| Sibling skill missing | `openclaw skills install ./leads-hunt-<name>` from the pack repo. |
+| Missing companion skill | Make sure `leads-hunt`, `leads-hunt-outreach`, `leads-hunt-add-target`, and `leads-hunt-voice` are all available to the agent. |
+| Workspace init fails | Confirm the current workspace is writable and retry step 1. |
 | LinkedIn `Wrong email or password` | Re-prompt the AE; common is typo'd password. |
 | LinkedIn captcha | Manual seasoning (see Pitfall #1). |
 | `crmStatus` missing in Sales Nav response | BD seat lacks Salesforce sync; escalate to BD IT. |
-| Cron job didn't fire next morning | `openclaw cron list` → check daemon status; `openclaw doctor --fix`. |
+| Recurring job didn't fire next morning | Re-check scheduler registration and confirm the expected jobs were actually created. |
 
 Full failure-mode catalog: [references/troubleshooting.md](references/troubleshooting.md).
 Credential handling + AE responsibilities: [references/security.md](references/security.md).
@@ -230,13 +218,13 @@ Credential handling + AE responsibilities: [references/security.md](references/s
 
 The wizard is step-addressable. If the AE drops mid-flow and comes back, the agent should:
 
-1. Re-run `check_prereqs.py`.
+1. Re-check which prerequisites are already satisfied.
 2. Inspect `<workspace>/leads-hunt/` for what already exists:
    - `kb.md` exists → skip step 1.
    - `style.md` exists → skip step 2.
    - `browser-profile/` has cookies AND `sales_nav_query.py BytePlus` returns JSON → skip steps 3/4.
    - At least one enabled topic file → skip step 5.
-   - `openclaw cron list` shows 4 leads-hunt jobs → skip step 6.
+   - The scheduler already shows 4 leads-hunt jobs → skip step 6.
 3. Resume from the first unfinished step.
 
 Ask the AE before skipping a step: *"Looks like step 3 is already done — your LinkedIn session is live. Skip it?"* — give them an out in case they want to re-do it (e.g. cookie rotation).
