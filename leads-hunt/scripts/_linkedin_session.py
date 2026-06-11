@@ -7,8 +7,16 @@ import time
 from pathlib import Path
 from typing import Callable
 
-LINKEDIN_AUTH_COOKIE_NAMES = ("li_at", "JSESSIONID")
-LINKEDIN_REQUIRED_COOKIE_NAMES = ("li_at",)
+LINKEDIN_AUTH_COOKIE_NAMES = (
+    "li_at",
+    "li_a",
+    "JSESSIONID",
+    "li_rm",
+    "li_ep_auth_context",
+    "bscookie",
+    "bcookie",
+)
+LINKEDIN_REQUIRED_COOKIE_NAMES = LINKEDIN_AUTH_COOKIE_NAMES
 _CHROME_EPOCH_OFFSET_SECONDS = 11644473600
 
 
@@ -79,11 +87,16 @@ def _fetch_linkedin_auth_cookie_rows(cookie_db: Path) -> list[sqlite3.Row]:
                    expires_utc, is_httponly, is_secure, last_update_utc
             FROM cookies
             WHERE host_key LIKE ?
-              AND name IN (?, ?)
+              AND name IN ({placeholders})
             ORDER BY
-              CASE name WHEN 'li_at' THEN 0 ELSE 1 END,
-              host_key
-            """,
+              CASE
+                WHEN name IN ('li_at', 'li_a') THEN 0
+                WHEN name IN ('li_rm', 'li_ep_auth_context', 'JSESSIONID') THEN 1
+                ELSE 2
+              END,
+              host_key,
+              name
+            """.format(placeholders=", ".join("?" for _ in LINKEDIN_AUTH_COOKIE_NAMES)),
             ("%linkedin.com%", *LINKEDIN_AUTH_COOKIE_NAMES),
         ).fetchall()
     finally:
