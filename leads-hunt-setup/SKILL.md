@@ -81,12 +81,24 @@ High-level protocol:
    - Handle any MFA/OTP/captcha entirely inside the VNC browser. Do **not** ask the AE to paste codes or passwords into Lark; they type them directly into the LinkedIn pages.
    - When they are done, have them reply in Lark: *"Done, I'm logged into LinkedIn + Sales Nav in the cloud browser."*
 
-3. **Capture a VNC screenshot to verify login state**
-   - After the AE confirms, take a screenshot of the current VNC display and inspect it for:
-     - a visible LinkedIn authenticated view (for example feed, profile, or top nav with their avatar), and
-     - a Sales Navigator page that is past the login screen.
-   - If the screenshot still shows a login form or error state, tell the AE what you see (for example *"I still see a LinkedIn sign-in form"*) and ask them to fix it in the VNC browser, then take another screenshot.
-   - Only when the screenshot clearly shows a logged-in LinkedIn + Sales Nav session should the agent proceed to verification via script.
+3. **Capture the actual VNC display to verify login state**
+   - After the AE confirms, capture a screenshot directly from the live VNC display on `DISPLAY=:1`. Use `scrot` if available, or fall back to `xwd`, so the image reflects exactly what the user currently sees in the VNC window.
+   - Example capture commands:
+
+```bash
+DISPLAY=:1 scrot /tmp/leads-hunt-vnc-verify-step3.png
+```
+
+   - Or, if `scrot` is unavailable:
+
+```bash
+DISPLAY=:1 xwd -root -silent -out /tmp/leads-hunt-vnc-verify-step3.xwd
+```
+
+   - Do **not** open a new managed browser session for verification. A fresh browser session will not reflect the authenticated state the user established inside VNC.
+   - Inspect the captured VNC screenshot for a logged-in LinkedIn + Sales Navigator state, ideally including clear Sales Nav indicators such as `linkedin.com/sales/home`, the Sales Navigator home UI, or other authenticated Sales Nav navigation elements.
+   - If the captured VNC screenshot still shows a login form or error state, tell the AE what you see (for example *"I still see a LinkedIn sign-in form on the VNC display"*) and ask them to fix it in the same VNC browser, then capture the VNC display again.
+   - Only when the VNC screenshot clearly shows a logged-in LinkedIn + Sales Nav session should the agent proceed to the session-persistence script.
 
 4. **Persist the session via the existing helper script**
    - Once the screenshot check passes, run from the `leads-hunt` skill's scripts dir (NOT this skill — we don't duplicate playwright code):
@@ -124,10 +136,24 @@ High-level protocol:
    - Handle any SSO, MFA, OTP, app-push, or captcha challenge entirely inside the VNC browser. Do **not** ask the AE to paste codes or passwords into Lark.
    - When they are done, have them reply in Lark: *"Done, I'm logged into my BD Sales Nav account in the cloud browser."*
 
-3. **Capture a VNC screenshot to verify the BD seat login state**
-   - After the AE confirms, take a screenshot of the current VNC display and inspect it for a Sales Navigator page that is clearly past the login wall.
-   - If the screenshot still shows a sign-in page, SSO prompt, or error state, tell the AE what you see and ask them to finish the login in the VNC browser, then take another screenshot.
-   - Only continue once the screenshot clearly shows an authenticated Sales Navigator session for the BD-corporate seat.
+3. **Capture the actual VNC display to verify the BD seat login state**
+   - After the AE confirms, capture a screenshot directly from the live VNC display on `DISPLAY=:1`. Use `scrot` if available, or fall back to `xwd`, so the image reflects the exact browser state the AE is viewing inside VNC.
+   - Example capture commands:
+
+```bash
+DISPLAY=:1 scrot /tmp/leads-hunt-vnc-verify-step4.png
+```
+
+   - Or, if `scrot` is unavailable:
+
+```bash
+DISPLAY=:1 xwd -root -silent -out /tmp/leads-hunt-vnc-verify-step4.xwd
+```
+
+   - Do **not** open a new managed browser session for verification. Verification must inspect the same VNC browser session where the AE completed BD SSO.
+   - Inspect the captured VNC screenshot for an authenticated Sales Navigator state, ideally including indicators such as `linkedin.com/sales/home`, the Sales Navigator home page, or other clearly logged-in Sales Nav UI.
+   - If the captured VNC screenshot still shows a sign-in page, SSO prompt, or error state, tell the AE what you see and ask them to finish the login in the same VNC browser, then capture the VNC display again.
+   - Only continue once the VNC screenshot clearly shows an authenticated Sales Navigator session for the BD-corporate seat.
 
 4. **Persist the session via the existing helper script**
    - Once the screenshot check passes, run from the `leads-hunt` skill's scripts dir (NOT this skill — we don't duplicate playwright code):
