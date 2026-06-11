@@ -1,7 +1,6 @@
 ---
 name: leads-hunt-setup
 description: "First-run onboarding wizard for a new AE installing leads-hunt-pack on OpenClaw. Walks through workspace init, LinkedIn login, BD Sales Nav SSO, kb.md init, topic scaffolding, cron registration."
-version: 0.1.0
 author: Ben Lim
 license: MIT
 ---
@@ -24,7 +23,13 @@ If the AE has already onboarded and just wants a single piece (e.g. re-login Lin
 
 ## Prerequisites (check BEFORE step 1)
 
-Run `python3 scripts/check_prereqs.py` first. It checks three things:
+Run the prereq check first:
+
+```bash
+python3 scripts/check_prereqs.py
+```
+
+It checks three things:
 
 1. **OpenClaw onboard done** — `openclaw agents bindings` must include a `feishu:` binding. If not:
    > "First run `openclaw onboard` and bind your Lark app, then come back."
@@ -69,19 +74,39 @@ Do NOT pre-fill the voice file. It stays blank-slate; the AE fills it later via 
 
 ### Step 3 — LinkedIn login (personal seat)
 
-Run from the `leads-hunt` skill's scripts dir (NOT this skill — we don't duplicate playwright code):
+Use the `leads-hunt` skill's browser-based login helper, but **drive login through a cloud browser VNC session** instead of asking the AE to paste credentials into Lark.
+
+High-level protocol:
+
+1. **Spin up a cloud browser and share access details**
+   - Start the hosted Chromium profile that writes cookies into `<workspace>/leads-hunt/browser-profile/`.
+   - When the browser is ready, surface to the AE in Lark:
+     - a **VNC URL** they can open in their local browser, and
+     - a **VNC password** (or access token) needed to connect.
+   - Make it explicit that all LinkedIn and Sales Navigator login happens **inside this VNC browser**, not in their local browser.
+
+2. **Guide the AE to log into LinkedIn + Sales Navigator inside VNC**
+   - Ask the AE to connect to the VNC URL and, inside the remote Chromium, do the following:
+     1. Navigate to `https://www.linkedin.com/` and sign in with their personal LinkedIn account.
+     2. Once the main LinkedIn feed loads, navigate to `https://www.linkedin.com/sales/` (Sales Navigator) and confirm Sales Nav opens without a login wall.
+   - Handle any MFA/OTP/captcha entirely inside the VNC browser. Do **not** ask the AE to paste codes or passwords into Lark; they type them directly into the LinkedIn pages.
+   - When they are done, have them reply in Lark: *"Done, I'm logged into LinkedIn + Sales Nav in the cloud browser."*
+
+3. **Capture a VNC screenshot to verify login state**
+   - After the AE confirms, take a screenshot of the current VNC display and inspect it for:
+     - a visible LinkedIn authenticated view (for example feed, profile, or top nav with their avatar), and
+     - a Sales Navigator page that is past the login screen.
+   - If the screenshot still shows a login form or error state, tell the AE what you see (for example *"I still see a LinkedIn sign-in form"*) and ask them to fix it in the VNC browser, then take another screenshot.
+   - Only when the screenshot clearly shows a logged-in LinkedIn + Sales Nav session should the agent proceed to verification via script.
+
+4. **Persist the session via the existing helper script**
+   - Once the screenshot check passes, run from the `leads-hunt` skill's scripts dir (NOT this skill — we don't duplicate playwright code):
 
 ```bash
 python3 <leads-hunt-skill>/scripts/sales_nav_session_setup.py
 ```
 
-Q&A flow over Lark:
-1. Agent asks: *"Paste your personal LinkedIn email."* → AE pastes → agent forwards to script's stdin.
-2. Agent asks: *"Paste your password."* → never log this.
-3. If LinkedIn challenges with email OTP, the script writes a status file and waits up to 60s for `/tmp/lk_otp.txt`. Agent prompts the AE: *"LinkedIn sent an OTP to your email. Paste it here within 60 seconds."*. When AE replies, agent writes the value to `/tmp/lk_otp.txt`. The setup script picks it up and continues.
-4. If `Wrong email or password` appears in the script output → re-prompt creds.
-5. If `Check your LinkedIn app` appears → app-push challenge. Tell the AE to approve from their LinkedIn mobile app, then continue.
-6. If `Let's do a quick security check` (captcha) appears → fall back to **manual seasoning**: tell the AE to open Chromium on the same machine, log in to LinkedIn manually once via `<workspace>/leads-hunt/browser-profile/`, then re-run step 3. See `references/troubleshooting.md`.
+   - This script should pick up the cookies from `<workspace>/leads-hunt/browser-profile/` that were created by the cloud browser, and normalize them into the format used by the rest of the pack.
 
 Verify with:
 
@@ -89,17 +114,42 @@ Verify with:
 python3 <leads-hunt-skill>/scripts/sales_nav_query.py BytePlus
 ```
 
-Must return JSON. If it returns `needs-reauth`, the setup script lied — the heuristic is fragile. Re-run setup. Three strikes → escalate to troubleshooting doc.
-
-**OTP timeout**: if the AE doesn't paste OTP within 60s, the script aborts. Keep the Lark conversation alive and re-prompt; restart step 3.
+Must return JSON. If it returns `needs-reauth`, the setup script lied — the heuristic is fragile. Re-run setup, including spinning up a fresh cloud browser session. Three strikes → escalate to `references/troubleshooting.md`.
 
 ### Step 4 — BD-corporate Sales Nav SSO
 
-Same script, different seat. Ask:
+Use the same cloud browser VNC pattern as step 3, but for the AE's BD-corporate Sales Nav seat.
 
-> "Now your BD-corporate Sales Nav login. Paste your BD email."
+High-level protocol:
 
-Same OTP fallback flow as step 3. After login, verify Salesforce sync:
+1. **Reuse the active cloud browser if possible, otherwise spin up a new one**
+   - If the VNC session from step 3 is still active and the browser profile is still attached to `<workspace>/leads-hunt/browser-profile/`, reuse it.
+   - Otherwise, start a fresh cloud browser session that writes into the same browser profile directory.
+   - In either case, surface to the AE in Lark:
+     - the **VNC URL** to open, and
+     - the **VNC password** (or access token) needed to connect.
+
+2. **Guide the AE to log into the BD-corporate Sales Nav account inside VNC**
+   - Ask the AE to connect to the VNC browser and open Sales Navigator using their BD-corporate account.
+   - The goal for this step is a live BD-corporate Sales Nav seat inside the remote Chromium, not another credential exchange in Lark.
+   - Handle any SSO, MFA, OTP, app-push, or captcha challenge entirely inside the VNC browser. Do **not** ask the AE to paste codes or passwords into Lark.
+   - When they are done, have them reply in Lark: *"Done, I'm logged into my BD Sales Nav account in the cloud browser."*
+
+3. **Capture a VNC screenshot to verify the BD seat login state**
+   - After the AE confirms, take a screenshot of the current VNC display and inspect it for a Sales Navigator page that is clearly past the login wall.
+   - If the screenshot still shows a sign-in page, SSO prompt, or error state, tell the AE what you see and ask them to finish the login in the VNC browser, then take another screenshot.
+   - Only continue once the screenshot clearly shows an authenticated Sales Navigator session for the BD-corporate seat.
+
+4. **Persist the session via the existing helper script**
+   - Once the screenshot check passes, run from the `leads-hunt` skill's scripts dir (NOT this skill — we don't duplicate playwright code):
+
+```bash
+python3 <leads-hunt-skill>/scripts/sales_nav_session_setup.py
+```
+
+   - This script should pick up the cookies from `<workspace>/leads-hunt/browser-profile/` that were created or refreshed by the cloud browser, and normalize them into the format used by the rest of the pack.
+
+After login, verify Salesforce sync:
 
 ```bash
 python3 <leads-hunt-skill>/scripts/sales_nav_query.py BytePlus
