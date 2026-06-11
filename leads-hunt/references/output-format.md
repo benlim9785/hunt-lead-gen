@@ -2,9 +2,9 @@
 
 ## Per-topic CSV
 
-Path: `lead-gen/leads-<topic>-YYYY-MM-DD.csv`
+Path: `<workspace>/leads-hunt/data/lead-gen/leads-<topic>-YYYY-MM-DD.csv`
 
-12 columns:
+13 columns:
 
 | # | Column | Example |
 |---|---|---|
@@ -16,80 +16,44 @@ Path: `lead-gen/leads-<topic>-YYYY-MM-DD.csv`
 | 6 | Region | US |
 | 7 | EmployeeCount | 5 |
 | 8 | InCRM | false |
-| 9 | SalesforceURL | (empty if InCRM=false) |
-| 10 | OutreachAngle | "Saw their ABM AI agent. Seedance could power their multi-channel video ads. Volume tier + Asia low-latency might fit." |
+| 9 | SalesforceURL | (empty if `InCRM=false`) |
+| 10 | OutreachAngle | "Saw their ABM AI agent. Seedance could power their multi-channel video ads." |
 | 11 | DiscoveredVia | YC F2025 batch sweep |
-| 12 | ProducerEvidence | "Their /pricing page shows an 'AI ad video generation' feature exposed to subscribers — customer-facing AI output" |
+| 12 | ProducerEvidence | "Their pricing page exposes AI-generated ad video output to paying users." |
+| 13 | SalesNavNotFound | false |
 
-Column 12 (`ProducerEvidence`) is **mandatory** — it's the explicit citation that the candidate passed [Filter 0](./lead-philosophy.md). One short sentence pointing at the user-visible AI feature (URL fragment, product page screenshot caption, app-store listing, etc.). If you cannot fill this cell with concrete evidence, the candidate fails Filter 0 and must be skipped, not shipped. Audit-friendly format: agents reviewing past leads can verify the producer claim by visiting the URL hint.
-
-Header row present (Phase D writes it from `assets/csv-template.csv`).
+Notes:
+- `SalesNavNotFound=true` means the row was not cleanly confirmed by the normal Sales Nav company lookup path and may need manual review.
+- The per-topic CSV is Phase C output.
 
 ## Aggregate CSV
 
-Path: `lead-gen/leads-aggregate-YYYY-MM-DD.csv`
+Path: `<workspace>/leads-hunt/data/lead-gen/leads-aggregate-YYYY-MM-DD.csv`
 
-Same 11-column schema. Rows from both per-topic CSVs concatenated, sorted by `Score` descending.
+This is the merged Phase D output across all enabled topics. It uses the **same 13-column schema** as the per-topic CSVs and is sorted by `Score` descending.
 
-## Lark digest
+## Lark digest shape
 
-Single message at ~9:30AM MYT to `+601139987039` via existing announce mode. Top 5 across both topics.
+Phase D prints a markdown digest to stdout for the invoking agent to post into Lark. The digest includes:
 
-### Template
+- one headline line with the date
+- total shipped count
+- top leads summary grouped from the aggregate CSV
+- a reference to the aggregate CSV path
+- per-topic notes when a topic was dry or heavily deduped
 
-```
-🎯 *AIGC Lead Report — YYYY-MM-DD*
-
-✅ All leads verified against BytePlus Salesforce via Sales Nav (none in CRM).
-
-━━━━━━━━━━━━━━━━━━━━
-
-*Top 5 by score:*
-
-1. ⭐ {score}/10 *{company}* ({region}) — {topic}
-🌐 {domain}
-💡 {one-line outreach hook}
-
-2. ⭐ {score}/10 *{company}* ({region}) — {topic}
-...
-
-━━━━━━━━━━━━━━━━━━━━
-
-📊 {N_aigc_visual} aigc-visual + {N_seed3d} seed3d = {total} net-new today
-🔍 Methods: {aigc_visual_method}, {seed3d_method}
-⚠️ {N_skipped_in_crm} skipped (in CRM), {N_below_score} skipped (score <8)
-
-📁 Full CSVs:
-~/.openclaw/workspace-clawhunt/lead-gen/leads-aggregate-YYYY-MM-DD.csv
-```
-
-### Rules
-
-- **No em-dash (—) or en-dash (–)** anywhere in the message. Use period, comma, colon, or parenthesis.
-- **Light emoji only**: ⭐ 🌐 💡 📊 🔍 ⚠️ 📁 ✅. Never gratuitous.
-- **Keep total under 1500 characters** to avoid Lark split.
-- **Topic name** is the slug, not a translation: `aigc-visual` and `seed3d`.
-
-## When zero leads ship
-
-If a topic produces 0 leads (rare but possible on bad days):
-
-```
-🎯 *AIGC Lead Report — YYYY-MM-DD*
-
-⚠️ {topic} ran dry today: 0 net-new after dedup.
-{other_topic}: {N} leads (see CSV).
-
-📁 ~/.openclaw/workspace-clawhunt/lead-gen/leads-aggregate-YYYY-MM-DD.csv
-```
-
-Reflection paragraph for the dry topic should explain what verticals were tried + what to try tomorrow.
+Typical successful delivery includes only rows that survived:
+- Filter 0 (AI producer vs consumer)
+- score floor
+- Layer 1 Base `Skip List`
+- Layer 2 Base `Customers` + `Leads`
+- Layer 3 Sales Nav CRM check
 
 ## When BD SSO expires
 
-Phase A sends a different message (no leads):
+Phase A sends a different message (no verified leads):
 
-```
+```text
 ⚠️ *ClawHunt: BD SSO expired*
 
 Cannot verify CRM today. Run:
@@ -98,3 +62,10 @@ python3 <leads-hunt-skill>/scripts/sales_nav_session_setup.py
 Use the leads-hunt-setup VNC login flow to refresh the shared browser profile for LinkedIn / Sales Navigator.
 Complete any OTP / MFA / captcha directly inside the VNC browser, then retry the check.
 ```
+
+## Important distinction
+
+- **Source of truth**: Lark Base (`Leads`, `Customers`, `Skip List`, `Discovery Patterns`)
+- **Generated artifacts**: per-topic CSVs, aggregate CSV, run logs, candidate JSONs
+
+Deleting CSVs changes reporting history, but it does **not** erase dedup memory. Dedup memory lives in Lark Base.

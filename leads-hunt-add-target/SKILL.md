@@ -1,7 +1,6 @@
 ---
 name: leads-hunt-add-target
 description: "Interactive scaffolding for new lead-gen topics. Creates a topic .md file under leads-hunt's references/topics/ via Lark chat."
-version: 0.1.0
 author: Ben Lim
 license: MIT
 ---
@@ -255,7 +254,7 @@ Added target: <display_name> (<slug>)
 - Tomorrow's scheduled discover-all run will include it.
 ```
 
-If the AE wants the discover-all to run on a different cadence, that's an `openclaw cron add` change against the leads-hunt skill — not something this skill touches.
+If the AE wants the discover-all timing to change, that's an AIME-native scheduler update against the leads-hunt recurring tasks — not something this skill touches.
 
 ```
 Want to set per-target overrides (ceiling/score_floor/candidate_target) or leave as defaults?

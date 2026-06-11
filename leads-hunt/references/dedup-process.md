@@ -1,104 +1,84 @@
 # Dedup Process (3-layer stack)
 
-For every candidate, walk these layers in order. First hit wins (skip the candidate, log to run-log). Cheapest layers first.
+For every candidate, walk these layers in order. First decisive signal wins. Cheapest layers go first.
 
-## Why `kb.md` is the source of truth
+## Why Lark Base is the source of truth
 
-Phase D's `deliver_lark.py` appends every shipped lead to `<workspace>/leads-hunt/kb.md` under `## Shipped Leads` at the end of every run. Layer 2 reads from that file. Local CSVs (`leads-{topic}-YYYY-MM-DD.csv`) are **pure outputs**, not state — they can be deleted/regenerated without affecting future dedup correctness.
+The runtime system of record now lives in the configured Lark Base, not in a local markdown file:
+
+- `Leads` drives historical shipped-lead dedup and draft state.
+- `Customers` drives customer suppression.
+- `Skip List` drives hard-skips.
+- `Discovery Patterns` feeds Phase B learning loops.
+
+Local CSVs (`leads-{topic}-YYYY-MM-DD.csv`, `leads-aggregate-YYYY-MM-DD.csv`) are outputs only. They can be deleted and regenerated without changing future dedup behavior.
+
+`<workspace>/leads-hunt/kb.md` may still exist as a compatibility/notes file, but it is **not** consulted by the runtime dedup pipeline anymore.
+
+## Layer 1 — Base `Skip List`
+
+Fastest filter. If the candidate's domain or normalized company name matches a record in the `Skip List` table, drop it immediately.
+
+Typical sources of skip entries:
+- manual AE hard-skips
+- auto-skips when a company website mentions BytePlus/ByteDance/VolcEngine/Doubao/Jimeng/Seedream/Seedance
+- known irrelevant or saturated names the AE never wants to see again
+
+## Layer 2 — Base `Customers` + Base `Leads`
+
+`kb.already_seen()` fuzzy-matches the candidate company name against both tables:
+
+- `Customers` = already a BytePlus customer / active account
+- `Leads` = already shipped by this system before
+
+This gives cross-day memory without depending on local files.
 
 Operational implications:
-- Cross-day shipment dedup is driven entirely by `kb.md`'s Shipped Leads section. Old companies never fall off the list as long as their entry remains.
-- The AE can manually add to `kb.md` (e.g. customers tracked elsewhere, leads marked dead, false positives) and Layer 2 picks them up on the next run.
-- `kb.md` is the **portable** state — git-versioned if the AE chooses, Obsidian-compatible, grep-friendly.
-- Format is line-oriented: `- <slug> · <date> · key=value`. Helper `kb.py` provides `already_seen(name)`, `append_shipped(rows, date)`, `read_recent_patterns(topic, days)`.
+- Cross-day shipment dedup comes from the Base `Leads` table.
+- Manual AE additions should go into the relevant Base table, not `kb.md`.
+- Phase D upserts shipped leads into Base so tomorrow's run sees them automatically.
 
-## Layer 1 — `skip-list.txt`
+## Layer 3 — Sales Nav CRM check (truth signal)
 
-`<workspace>/leads-hunt/data/skip-list.txt`. Format: one bare domain or company name per line, with `#` comments for cohorts. Match by lowercased company name OR domain.
+If the candidate survives Layers 1-2, run the live Sales Navigator CRM check via `sales_nav_check.py`.
 
-Hit reasons:
-- `manual-skip` — entry was added by AE directly
-- `auto-skip-from-cohort-YYYY-MM-DD` — entry was appended by a previous run (e.g. saturated vertical detected)
-- `confirmed-customer` — AE annotated this manually
-- `byteplus-mention` — website mentioned a BytePlus product
+Possible outcomes:
 
-## Layer 2 — `kb.md` (the source-of-truth layer)
+1. **`in_crm = true`**
+   - Candidate is already present in the synced Salesforce tenant.
+   - Drop it.
 
-Reads `<workspace>/leads-hunt/kb.md`. Two H2 sections matter for dedup:
+2. **`in_crm = false` with a normal JSON response**
+   - Candidate is not currently in CRM.
+   - Keep it (subject to score ceiling / per-topic ceiling).
 
-```markdown
-## Customers
-- acme-corp · 2025-12-01 · status=active
-- globex · 2026-01-15 · status=churned
+3. **`needs-reauth` / `sso-expired`**
+   - Phase A should usually catch this before Phase C starts.
+   - If it still happens mid-run, treat it as a session-health problem and refresh the VNC/browser session before trusting future runs.
+   - The current pipeline may still mark such rows for manual review rather than hard-dropping them, so read the run-log before deciding whether a digest is fully verified.
 
-## Shipped Leads
-- foobar-ai · 2026-05-20 · topic=aigc-visual · score=9
-- bazquux · 2026-05-22 · topic=seed3d · score=8
-```
+4. **Sales Nav company not found**
+   - The current pipeline may still ship the row with `SalesNavNotFound=true` so the AE can manually review it.
+   - This is a weaker signal than a clean `in_crm = false` result.
 
-Names from both sections are normalized (lowercase, strip punctuation, strip "AI"/"Inc"/"Corp" suffixes) and merged into a single set. Match on **normalized company name**.
+## Cache behavior
 
-Hit reasons:
-- `tracked-customer` — match against `## Customers`
-- `previously-shipped-lead` — match against `## Shipped Leads`
+Layer 3 uses a rolling JSONL cache at `data/lead-gen/sales-nav-cache.jsonl`.
 
-The AE can use `kb.md` for any other note-taking (the `## Discovery Patterns Learned` section is read by Phase B's brief; the `## Skip List` section is a freeform area for AE notes that doesn't affect dedup directly — that's `skip-list.txt`'s job).
+- Cache key: normalized lowercase company name
+- TTL: 24 hours
+- Purpose: avoid repeated Playwright lookups for the same company in one day
 
-## Layer 3 — Sales Nav CRM check (the truth signal)
+The cache accelerates repeated checks, but the live Sales Nav result remains the real truth signal.
 
-Use `scripts/sales_nav_check.py` which wraps `scripts/sales_nav_query.py`.
+## Failure-handling guidance
 
-Checks BytePlus's actual Salesforce via LinkedIn Sales Navigator's CRM Sync badge. Returns one of:
-- `in_crm: true` → SKIP, append to skip-list with `auto-skip-sales-nav-YYYY-MM-DD`
-- `in_crm: false` → SHIP (assuming layer 1-2 also clean and score ≥8)
-- `found: false` → company not on LinkedIn at all (rare, often hallucination); SKIP and log
-- exit code 3 → BD SSO expired; HALT the day, Lark AE
+- **Phase A fails (`exit 3`)**: stop relying on Layer 3 until the session is refreshed.
+- **Empty digest**: do not immediately re-run the pipeline; inspect the run-log first.
+- **Unexpected drops in shipped count**: compare candidate count vs kept count in the run-log to see whether Layers 1-2 or Layer 3 did most of the filtering.
 
-### Cache layer (24hr)
+## Related docs
 
-`<workspace>/leads-hunt/data/sales-nav-cache.jsonl` stores verdicts to avoid redundant API calls. CRM Sync refreshes every 12hr per LinkedIn docs, so 24hr cache returns no stale data. Cache key is the lowercased company name.
-
-```jsonl
-{"company": "Hypotenuse AI", "in_crm": true, "checked_at": "2026-04-25T17:43:00+08:00", "salesforce_url": "https://byteplus.my.salesforce.com/001RC00001DeCAYYA3"}
-{"company": "Abmatic AI", "in_crm": false, "checked_at": "2026-04-25T17:43:00+08:00"}
-```
-
-### When BD SSO expires (Phase A)
-
-Phase A runs `sales_nav_query.py "BytePlus"` as a smoke test before Phase B. If exit code 3:
-1. Send Lark via deliver script: "BD SSO expired. Run `python3 scripts/sales_nav_session_setup.py` and reply with OTP via Lark when prompted. leads-hunt will retry tomorrow."
-2. Halt all subsequent phases for the day.
-3. The next morning, Phase A retries. If AE refreshed SSO during the day, normal run resumes.
-
-**Never degrade to "no Sales Nav layer" mode.** The whole point of the design is the CRM signal. Skipping Layer 3 means shipping unverified leads, which defeats the purpose.
-
-## Order of execution within Phase C
-
-```python
-for candidate in candidates_json:
-    # Layer 1
-    if candidate.domain in skip_list: skip("manual-skip"); continue
-    # Layer 2 — kb.md (source of truth)
-    if kb.already_seen(candidate.name): skip("kb-tracked-or-shipped"); continue
-    # Layer 3 (cache first, then live API)
-    if cached := sales_nav_cache.get(candidate.name):
-        if cached.in_crm: skip("sales-nav-cached"); continue
-    else:
-        result = sales_nav_query(candidate.name)
-        cache.write(result)
-        if result.exit_code == 3: halt_day(); break
-        if result.in_crm: skip("sales-nav-live"); continue
-    # Survived all 3 layers → ship if score ≥ 8
-    ship_to_csv(candidate)
-```
-
-Phase D then calls `kb.append_shipped(rows, today)` to write the surviving leads back into `kb.md`'s `## Shipped Leads` section, closing the loop for tomorrow's Layer 2.
-
-## Performance
-
-- Layer 1: ~5ms per candidate (in-memory set lookup)
-- Layer 2: ~10ms total per Phase C run (read kb.md once, build name set, cached for the run)
-- Layer 3 cache hit: ~5ms (jsonl scan)
-- Layer 3 cache miss (live Sales Nav): ~10s per candidate (browser + page load)
-
-Worst case: 30 candidates with 0% cache hit = 5 minutes Sales Nav latency. Acceptable for once-a-day batch.
+- [output-format.md](output-format.md)
+- [empty-digest-diagnostic.md](empty-digest-diagnostic.md)
+- [layer4-vs-linked-api.md](layer4-vs-linked-api.md)

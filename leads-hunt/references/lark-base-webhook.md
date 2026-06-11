@@ -2,15 +2,22 @@
 
 This doc covers the live `Leads -> Draft Message -> webhook -> Message Draft` automation for leads-hunt.
 
-## Current live endpoint
+## Current Ben workspace wiring
+
+> Installation-specific reference. These values match the current live workspace and should be **verified**, not blindly copied into another AE's setup.
 
 - **Webhook endpoint:** `https://8765-63695237a9154ca7b1d59be422f9fa1b-cube-kubestrato-online6.code-server.strato-https-proxy.bytedance.net/leads-hunt/draft`
 - **Health check:** `https://8765-63695237a9154ca7b1d59be422f9fa1b-cube-kubestrato-online6.code-server.strato-https-proxy.bytedance.net/healthz`
+- **Base token:** `GhaRbzKzKa99GbsUA3RmDpWqywd`
 - **Base URL:** `https://bytedance.my.larkoffice.com/base/GhaRbzKzKa99GbsUA3RmDpWqywd`
 - **Leads table ID:** `tblbBRdDEIT3IQy2`
+- **Customers table ID:** `tblFrR3Zdg7cir1e`
+- **Skip List table ID:** `tblCnc9ZmrSjgOUB`
+- **Discovery Patterns table ID:** `tblBkxwOBa1CIfbl`
+- **Workflow ID:** `wkfidZ8YCM3SIfZn`
 - **Workflow name:** `Generate outreach draft when Draft Message = Yes`
 
-> The webhook URL is environment-specific. If the server is restarted on a different port or machine, update the Lark Base workflow and `<workspace>/leads-hunt/config.json` together.
+If the webhook URL changes, update the Lark Base workflow and `<workspace>/leads-hunt/config.json` together.
 
 ## Trigger contract
 
@@ -107,7 +114,7 @@ The installed workflow uses:
    - `Message Draft` is populated
    - `Draft Message` has moved to `Done`
 
-> Note: `SetRecordTrigger` is a modification trigger. In practice, the clean human verification path is to flip the field inside the Lark Base UI. API-side updates were not observed to fire this trigger in my test run, so use a manual UI edit for final acceptance.
+> Note: `SetRecordTrigger` is a modification trigger. In practice, the clean human verification path is to flip the field inside the Lark Base UI. API-side updates were not observed to fire this trigger in prior testing, so use a manual UI edit for final acceptance.
 
 ## Response contract
 

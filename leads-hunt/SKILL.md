@@ -91,7 +91,7 @@ Full protocol + cache format + SSO failure handling: [references/dedup-process.m
 
 - [references/dedup-process.md](references/dedup-process.md) — 3-layer dedup stack + Sales Nav protocol + BD SSO expiry handling
 - [references/scoring-rubric.md](references/scoring-rubric.md) — 1-10 scoring + skip rules
-- [references/output-format.md](references/output-format.md) — 11-column CSV schema + Lark digest template
+- [references/output-format.md](references/output-format.md) — 13-column CSV schema + Lark digest template
 - [references/discovery-rotation.md](references/discovery-rotation.md) — day-of-week → discovery method
 - [references/lead-philosophy.md](references/lead-philosophy.md) — producer-vs-consumer doctrine
 - [references/warm-signals.md](references/warm-signals.md) — outreach signal taxonomy
@@ -114,32 +114,27 @@ Full protocol + cache format + SSO failure handling: [references/dedup-process.m
 
 Phase D upserts each shipped lead into the Base `Leads` table so future runs see it via Layer 2 dedup. The pipeline also reads Base `Customers`, Base `Skip List`, and Base `Discovery Patterns` directly.
 
-## Cron scheduling (OpenClaw)
+## Scheduled runs (AIME native scheduler)
 
-OpenClaw cron (Gateway-level scheduler, persists in SQLite, delivers to bound Lark channel). 4 jobs total, regardless of how many topics the AE has enabled:
+Use **AIME's native scheduler**, not `openclaw cron` and not system `crontab`. The canonical specs live in `leads-hunt-setup/scripts/register_cron.py`, and the `leads-hunt-setup` wizard is the preferred way to register them.
 
-```bash
-# Phase A — SSO canary at 07:30
-openclaw cron add --schedule "30 7 * * *" \
-  --message "Run leads-hunt Phase A: python3 scripts/run_topic.py --phase sso-check. Lark me on exit 3."
+Canonical recurring jobs (4 total, regardless of topic count):
 
-# Phase B — agent-mode discovery at 08:00
-openclaw cron add --schedule "0 8 * * *" \
-  --message "Run leads-hunt Phase B: glob references/topics/*.md and discover for each enabled topic. Skill: leads-hunt." \
-  --skills leads-hunt --enabled-toolsets terminal,web,file
+| Time | Name | Cron expression |
+|---|---|---|
+| 07:30 | `leads-hunt Phase A (sso-check)` | `0 30 7 * * *` |
+| 08:00 | `leads-hunt Phase B (discover-all)` | `0 0 8 * * *` |
+| 09:00 | `leads-hunt Phase C (dedup-all)` | `0 0 9 * * *` |
+| 09:30 | `leads-hunt Phase D (deliver)` | `0 30 9 * * *` |
 
-# Phase C — dedup at 09:00
-openclaw cron add --schedule "0 9 * * *" \
-  --message "Run leads-hunt Phase C: python3 scripts/run_topic.py --phase dedup-all"
+Current Ben workspace installation (AIME-native task IDs, lane-specific — do **not** reuse for another AE):
 
-# Phase D — Lark digest at 09:30
-openclaw cron add --schedule "30 9 * * *" \
-  --message "Run leads-hunt Phase D: python3 scripts/run_topic.py --phase deliver"
-```
+- Phase A — `46e35f4b` (`46e35f4b-3070-471a-94ce-5fc3d5d0f1c2`)
+- Phase B — `bfca9fcb` (`bfca9fcb-ec97-4764-aa82-f17db8596de6`)
+- Phase C — `0540add7` (`0540add7-bbd8-482f-93d6-bbc958ce2333`)
+- Phase D — `e17393fb` (`e17393fb-78fa-4719-a67d-88519560336d`)
 
-Server timezone matters — run `timedatectl` to confirm before scheduling. Adjust the times to MYT (or AE's local) by reading the server's tz offset.
-
-The `leads-hunt-setup` wizard offers to register these for the AE.
+Server timezone still matters — register the schedules in the workspace/server timezone and verify the created tasks after registration. By default the current installation stops on `2026-12-08T23:59:59+08:00`; new installs should follow the platform scheduler policy rather than copying that date blindly.
 
 ## Topic registry & cron topology
 

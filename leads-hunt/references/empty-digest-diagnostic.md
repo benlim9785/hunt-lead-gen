@@ -1,59 +1,51 @@
 # "Why no new leads today?" — empty digest diagnostic
 
-When the user asks "why no new leads today" / "today produced no leads at all" / "nothing in the digest," resolve this in ≤3 tool calls. Do NOT re-run the pipeline before diagnosing — the answer is almost always in the logs.
+When the user asks "why no new leads today" / "today produced no leads at all" / "nothing in the digest," resolve this by inspecting the existing outputs first. Do **not** re-run the pipeline before diagnosing — the answer is usually in the logs.
+
+## Check these artifacts first
+
+- `<workspace>/leads-hunt/data/lead-gen/run-log-YYYY-MM-DD.txt`
+- `<workspace>/leads-hunt/data/lead-gen/leads-aggregate-YYYY-MM-DD.csv`
+- the per-topic CSVs for the same date
 
 ## Common causes, in observed frequency order
 
 ### 1. Total dedup drain (most common)
-**Symptom**: cron healthy, all four phases ran, Phase D delivered an empty/skinny digest. Run-log shows Phase B yielded N candidates, Phase C dropped to 0–1.
+**Symptom**: Phase B produced candidates, but Phase C filtered almost all of them.
 
-**Root cause**: Brave search re-surfaced the same known names (Phot.AI, KreadoAI, Vizard, etc.) that yesterday's run already shipped. Layer 1 (skip-list) + Layer 2 (ClawMander leads) correctly filter them as duplicates. The pipeline did its job — discovery is just stale.
+**Root cause**: Discovery resurfaced companies already covered by:
+- Base `Skip List`
+- Base `Customers`
+- Base `Leads`
+- Sales Nav CRM sync
 
-**Don't fix by re-running.** A second Brave query that hour returns the same SERP. The fix is broadening discovery channels (SimilarWeb, Crunchbase API, vertical-trade-press scraping), not retrying.
+**What to say**: The pipeline likely worked correctly; the discovery inputs were stale or saturated.
 
-**Diagnose**:
-```bash
-# Today's run log — count per-phase yields
-ls -la /root/.hermes/profiles/hunt/lead-gen/run-log-$(date +%Y-%m-%d).txt
-grep -E '(candidates|filtered|shipped|net-new)' /root/.hermes/profiles/hunt/lead-gen/run-log-$(date +%Y-%m-%d).txt
-# Today's candidates JSON — what Phase B actually found
-cat /root/.hermes/profiles/hunt/lead-gen/candidates/*-$(date +%Y-%m-%d).json | jq '.[].company_name' | sort -u
-# Compare to yesterday — overlap = stale-discovery signal
-diff <(cat /root/.hermes/profiles/hunt/lead-gen/candidates/*-$(date +%Y-%m-%d).json | jq -r '.[].company_name' | sort -u) \
-     <(cat /root/.hermes/profiles/hunt/lead-gen/candidates/*-$(date -d yesterday +%Y-%m-%d).json | jq -r '.[].company_name' | sort -u)
-```
+### 2. Score-floor drain
+**Symptom**: Plenty of candidates discovered, few or none made it into the CSV.
 
-### 2. Saturated vertical for the day's rotation
-Discovery rotation picked a vertical that's now in "Saturated verticals" list. Phase B yielded candidates but all were AI-prominent / AI-named / on the saturation list. Score floor (≥8) cut them.
+**Root cause**: Most candidates scored below the configured threshold.
 
-**Diagnose**: same run-log grep; look at the candidate names against the SKILL.md "Saturated verticals" section.
+**What to say**: Discovery found names, but they were weak fits against the current rubric.
 
-### 3. Phase A SSO failure (cascades)
-Sales Nav SSO expired → Phase A exit 3 → Phase B/C/D may run but Layer 4 silently no-ops, OR they're skipped entirely depending on cron wiring. Check Phase A first.
+### 3. Sales Nav session problem
+**Symptom**: Run-log shows `needs-reauth`, `sso-expired`, or many rows marked for manual review.
 
-```bash
-grep 'Phase A' /root/.hermes/profiles/hunt/lead-gen/run-log-$(date +%Y-%m-%d).txt
-```
+**Root cause**: The LinkedIn / Sales Nav session drifted after Phase A or was never fully healthy.
 
-### 4. LinkedIn/Brave rate-limit or fingerprint detection
-Phase B agent log shows tool errors (Brave 429, Sales Nav captcha, Playwright crash). Check `/root/.hermes/profiles/hunt/logs/agent.log` for errors during today's cron window.
+**What to say**: The CRM verification layer was unhealthy, so today's output may be empty or only partially verified. Refresh the VNC/browser session before trusting the next run.
 
-```bash
-awk -v d="$(date +%Y-%m-%d)" '$1==d && tolower($0) ~ /error|fail|429|captcha|timeout/' \
-  /root/.hermes/profiles/hunt/logs/agent.log
-```
+### 4. Topic was genuinely dry
+**Symptom**: Phase B itself found very few credible AI producers.
 
-### 5. Cron didn't fire
-Rare. Verify with `cronjob list` or `hermes cron list` and `tick.lock` mtime ≥90s old.
+**Root cause**: The day's discovery method or target segment was low-yield.
 
-## Response template (when answering the user)
+**What to say**: Today looked like a low-signal discovery day for that topic. Try the next day's method or refresh the topic thesis.
 
-Lead with the cause, not the diagnostic walkthrough. Two-line answer:
-- "Cron ran fine. Phase B returned the same known names (Phot.AI, KreadoAI, etc.); dedup filtered them as already-shipped. Real fix is new discovery channels, not a re-run."
-- Then offer the next concrete step (broaden Brave queries, wire SimilarWeb, etc.) only if the user asks.
+## Minimal response template
 
-## Anti-pattern: re-running the pipeline as a first response
+> I checked the existing leads-hunt outputs instead of re-running the pipeline. Today's empty/skinny digest looks caused by **[dedup drain / score-floor drain / Sales Nav session issue / dry topic]**. The key evidence is in `<workspace>/leads-hunt/data/lead-gen/run-log-YYYY-MM-DD.txt`, where **[brief evidence]** shows why the candidates did not ship.
 
-The user asked this question on 2026-05-19. The agent burned 16+ tool calls re-running the entire pipeline (`/approve` × 2, agent runs of 118s + 620s + 163s + 739s) only to surface KreadoAI — which the same pipeline had already deduped earlier. Cost ≈$1 of Bedrock calls + 25min wall time for one marginal lead the user could have approved manually.
+## Important rule
 
-**Rule**: read the run-log first, re-run never. If the run-log shows total dedup drain, the answer is "discovery is stale, broaden channels," not "let me try again."
+If the user asks "why no leads," **diagnose first**. Re-running without reading the existing run-log usually wastes time and can muddy the evidence.

@@ -17,12 +17,13 @@ Path resolution:
 
 The home directory holds per-AE state:
   $LEADS_HUNT_HOME/
-    kb.md                 — knowledge base (shipped leads, patterns)
     browser-profile/      — Chromium persistent context (Sales Nav SSO)
     data/candidates/      — Phase B output JSONs
     data/lead-gen/        — Phase C/D CSVs + run logs
+    style.md              — outreach voice hints read by draft_webhook_server.py
+    kb.md                 — legacy compatibility notes file (not runtime source of truth)
     .env                  — LK_*, BD_*, LARK_* credentials
-    config.json           — per-AE overrides (Lark Base IDs, workflow URL, etc.)
+    config.json           — per-AE overrides (Lark Base IDs, webhook URL, workflow metadata)
 """
 from __future__ import annotations
 

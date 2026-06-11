@@ -12,16 +12,20 @@ Common failure modes encountered during the 6-step wizard, with fix recipes. Cro
 
 **Fix**: Make sure all companion skills are installed/enabled for the current AIME workspace before re-running setup.
 
-### Workspace already exists with kb.md
+### Workspace already exists with legacy state
 
-**Cause**: A prior run of `leads-hunt-setup` populated `<workspace>/leads-hunt/kb.md`, or the AE has been using the pipeline for a while.
+**Cause**: A prior run of `leads-hunt-setup` already created `<workspace>/leads-hunt/`, or the AE has been using the pipeline for a while.
 
 **Fix**:
-- If the AE wants to **resume setup** (for example just re-do steps 4/5 after a partial failure), do NOT pass `--force`. The wizard's resume logic skips already-done steps.
-- If the AE genuinely wants to **start over**, back up `kb.md` first (it contains shipped leads + customer tracking that's painful to lose), then re-run with `--force`:
+- If the AE wants to **resume setup** (for example just re-do steps 3/5/6 after a partial failure), do **not** pass `--force`. Existing `kb.md`, `config.json`, `browser-profile/`, and `data/` are resume-friendly.
+- If the AE genuinely wants to **rewrite only the legacy compatibility file**, re-run step 1 with `--force`:
   ```bash
-  cp <workspace>/leads-hunt/kb.md /tmp/kb.md.backup
   python3 scripts/init_state.py --force
+  ```
+- If the AE wants a **true full reset**, back up anything they still need from `config.json`, `style.md`, and `browser-profile/`, then remove the workspace manually:
+  ```bash
+  rm -rf <workspace>/leads-hunt
+  python3 scripts/init_state.py
   ```
 
 ---
@@ -64,7 +68,7 @@ Common failure modes encountered during the 6-step wizard, with fix recipes. Cro
 
 ---
 
-## BD-corporate Sales Nav SSO (step 4)
+## Sales Nav CRM verification (during step 3)
 
 ### `crmStatus` missing in the response payload
 
@@ -83,29 +87,60 @@ The wizard can complete without this — just warn the AE that Layer 3 dedup wil
 
 ---
 
+## Lark Base setup (step 5)
+
+### Base created but workflow missing
+
+**Cause**: The Base was created successfully, but the webhook URL was unavailable or the workflow creation step failed.
+
+**Fix**:
+```bash
+python3 scripts/create_lark_base.py --webhook-url "<your-aime-webhook-endpoint>"
+```
+
+If the Base already exists, use:
+```bash
+python3 scripts/connect_existing_lark_base.py \
+  --base-token <base-token> \
+  --base-url "<base-url>" \
+  --webhook-url "<your-aime-webhook-endpoint>"
+```
+
+### `config.json` missing Base IDs after setup
+
+**Cause**: The Base or workflow step failed before the workspace config was written.
+
+**Fix**: Re-run step 5 and confirm `<workspace>/leads-hunt/config.json` now contains:
+- `lark_base.base_token`
+- `lark_base.url`
+- all 4 expected table IDs
+- `lark_base.webhook_url`
+- workflow metadata under `lark_base.workflow.draft_message_yes`
+
+---
+
 ## Scheduler setup (step 6)
 
 ### Recurring jobs were supposedly registered but never fired
 
-**Cause**: The local scheduler entry was not actually installed, the environment differs under cron, or the host machine's scheduler is disabled.
+**Cause**: The AIME-native scheduler entries were not actually created, they were created in a different lane, or the task definitions drifted from the expected names/cron expressions.
 
 **Fix**:
-```bash
-crontab -l
-```
-Confirm the leads-hunt entries are present. If they are missing, run `python3 scripts/register_cron.py` again or use the generated `cron-suggestions.txt` and install the jobs manually.
+- Verify the 4 jobs exist in the AIME scheduler.
+- Confirm the canonical names and cron expressions still match `python3 scripts/register_cron.py`.
+- If step 6 was declined earlier, inspect `<workspace>/leads-hunt/cron-suggestions.json` and register from those canonical specs.
 
 ### Schedule string malformed
 
 **Cause**: Someone manually edited the schedule and broke the cron expression.
 
-**Fix**: Standard cron format: `minute hour day-of-month month day-of-week`. Use https://crontab.guru/ to debug. The 4 default schedules are known-good.
+**Fix**: Use the canonical cron expressions emitted by `python3 scripts/register_cron.py`. The 4 default schedules are known-good.
 
 ### Job already registered (idempotency triggered unexpectedly)
 
-**Cause**: A previous run of `register_cron.py` succeeded, then the AE re-ran the wizard.
+**Cause**: A previous run of step 6 already succeeded, then the AE re-ran the wizard.
 
-**Fix**: This is correct behaviour — `register_cron.py` skips matching jobs. To force re-register, remove the corresponding leads-hunt entries from `crontab -l`, then run the script again.
+**Fix**: This is correct behavior — verify the existing jobs and keep them if they match the canonical specs. Only recreate them if the AE explicitly wants to replace the current registrations.
 
 ---
 
@@ -113,13 +148,7 @@ Confirm the leads-hunt entries are present. If they are missing, run `python3 sc
 
 ### `--force` semantics
 
-`init_state.py --force` rewrites `kb.md` to the empty H2 skeleton. **It does not delete `data/`, `browser-profile/`, or `.env`.** Those are preserved across re-inits. Only the KB resets.
-
-If the AE wants a true full reset, do it manually:
-```bash
-rm -rf <workspace>/leads-hunt
-python3 scripts/init_state.py
-```
+`init_state.py --force` rewrites the legacy `kb.md` compatibility skeleton only. **It does not delete `data/`, `browser-profile/`, `.env`, `style.md`, or `config.json`.** Those are preserved across re-inits.
 
 ### Permission denied on `<workspace>/leads-hunt/.env`
 

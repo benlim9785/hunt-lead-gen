@@ -4,10 +4,15 @@
 Creates:
   <workspace>/leads-hunt/data/
   <workspace>/leads-hunt/browser-profile/
-  <workspace>/leads-hunt/kb.md  (with empty H2 skeleton)
+  <workspace>/leads-hunt/kb.md  (legacy compatibility skeleton only)
+
+`kb.md` is kept for backward compatibility and optional AE notes, but it is no
+longer the runtime source of truth. Runtime lead data lives in the configured
+Lark Base and per-AE metadata lives in `<workspace>/leads-hunt/config.json`.
 
 Idempotent: re-running on an existing dir is a no-op unless --force is given,
-in which case kb.md is rewritten to the empty skeleton (existing content lost).
+in which case the compatibility `kb.md` is rewritten to the empty skeleton
+(existing content lost).
 
 Workspace path resolves from $AIME_WORKSPACE_PATH when available.
 Override with --workspace <path>.
@@ -20,28 +25,34 @@ import sys
 from pathlib import Path
 
 KB_SKELETON = """\
-# leads-hunt knowledge base
+# leads-hunt compatibility notes
 
-This file is the AE's source of truth. Every shipped lead, every tracked
-customer, every pattern learned, every hard-skip — all lives here. Read by
-Layer 2 dedup and by Phase B's discovery-pattern feedback loop.
+Legacy local notes file kept for backward compatibility only.
+
+Runtime source of truth:
+- Leads -> Lark Base `Leads`
+- Customers -> Lark Base `Customers`
+- Skip List -> Lark Base `Skip List`
+- Discovery Patterns -> Lark Base `Discovery Patterns`
+
+Use this file only for optional AE notes that do not need to participate in the
+runtime pipeline.
 
 ## Customers
 
-_(BytePlus customers you're tracking. One H3 per customer.)_
+_(Legacy compatibility section — canonical runtime data lives in Lark Base.)_
 
 ## Shipped Leads
 
-_(Leads delivered to Lark digests. Phase D appends here automatically.)_
+_(Legacy compatibility section — Phase D now upserts shipped leads to Base.)_
 
 ## Skip List
 
-_(Hard-skip companies — name on its own line. Layer 1 reads this.)_
+_(Legacy compatibility section — Layer 1 now reads the Base `Skip List` table.)_
 
 ## Discovery Patterns Learned
 
-_(Saturated verticals, high-yield segments, hypotheses to retire. Phase B
-reads recent entries from here.)_
+_(Legacy compatibility section — Phase B now reads recent patterns from Base.)_
 """
 
 
@@ -57,7 +68,7 @@ def resolve_workspace(arg: str | None) -> Path:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--workspace", help="Override AIME_WORKSPACE_PATH")
-    ap.add_argument("--force", action="store_true", help="Rewrite kb.md skeleton even if non-empty")
+    ap.add_argument("--force", action="store_true", help="Rewrite legacy kb.md skeleton even if non-empty")
     args = ap.parse_args()
 
     root = resolve_workspace(args.workspace) / "leads-hunt"
@@ -71,12 +82,12 @@ def main() -> int:
         print(f"created {kb}")
     elif kb.stat().st_size == 0:
         kb.write_text(KB_SKELETON, encoding="utf-8")
-        print(f"populated empty {kb} with skeleton")
+        print(f"populated empty {kb} with compatibility skeleton")
     elif args.force:
         kb.write_text(KB_SKELETON, encoding="utf-8")
         print(f"⚠  rewrote {kb} (--force; previous content lost)")
     else:
-        print(f"kept existing {kb} (use --force to overwrite)")
+        print(f"kept existing {kb} (use --force to overwrite the compatibility skeleton)")
 
     print(f"state dir ready: {root}")
     return 0

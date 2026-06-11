@@ -21,8 +21,8 @@ Input candidate keys (agent-supplied):
   size_band: "1-50"|"51-200"|"201-500"|">500"
   funded_under_5m: bool
   bootstrapped_revenue: bool
-  saturated_vertical: bool   (set true if matches Saturated verticals in kb.md)
-  high_yield_vertical: bool  (set true if matches High-yield verticals in kb.md)
+  saturated_vertical: bool   (set true if it matches saturated patterns from the Discovery Patterns Base table)
+  high_yield_vertical: bool  (set true if it matches high-yield patterns from the Discovery Patterns Base table)
 
 Output:
   final_score: int

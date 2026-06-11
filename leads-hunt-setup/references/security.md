@@ -25,36 +25,38 @@ This skill does **not** collect or store any LLM provider API keys. The host age
 
 ### 4. Lark / messaging tokens
 
-- **NOT handled by this skill at all**. AIME and the surrounding messaging integrations own any required messaging credentials.
+- **NOT handled by this skill directly**. AIME and the surrounding messaging integrations own any required messaging credentials.
+- The skill does persist non-secret Base wiring metadata — Base token, Base URL, table IDs, webhook URL, and workflow metadata — into `<workspace>/leads-hunt/config.json`.
 - If the AE asks to rotate a messaging token or rebind an integration, handle that through the relevant AIME integration flow rather than this skill.
-- The destination for daily digests is not configured by storing a secret in this setup skill.
 
 ## File-system layout (after setup)
 
-```
+```text
 <workspace>/leads-hunt/
 ├── .env                    # mode 0600. Non-secret config only.
-├── kb.md                   # NOT secret, but per-AE business intel.
+├── config.json             # NOT secret. Base token/URL, table IDs, webhook URL, workflow metadata.
+├── kb.md                   # Legacy compatibility notes file only; not the runtime source of truth.
 ├── style.md                # NOT secret. AE's outreach voice.
 ├── browser-profile/        # CONTAINS LinkedIn + BD session cookies.
 │   ├── Default/Cookies     # SQLite — readable by anyone with FS access.
 │   └── ...
-├── data/                   # Cached lead candidates, run logs.
-└── cron-suggestions.txt    # Plain text scheduler commands (only if scheduler step declined).
+├── data/                   # Cached lead candidates, run logs, generated CSVs.
+└── cron-suggestions.json   # Canonical scheduler specs if step 6 was declined.
 ```
 
 ## What the AE is responsible for
 
 1. **Do NOT commit `.env` or `browser-profile/` to git.** The pack ships a `.gitignore` that excludes both, but if the AE creates their own repo on top, double-check.
 
-   ```
-   # leads-hunt-pack/.gitignore (already in place)
+   ```gitignore
+   # leads-hunt-pack/.gitignore (recommended)
    **/.env
    **/browser-profile/
    **/data/
-   **/kb.md
    **/style.md
    ```
+
+   `kb.md` is no longer sensitive runtime state, but it is still safer not to commit per-AE notes unless intentionally shared.
 
 2. **Workstation hygiene**. Anyone with read access to the AE's home dir can read `.env` and impersonate the LinkedIn session via `browser-profile/`. The wizard cannot fix this — full-disk encryption + screen lock are the AE's problem.
 

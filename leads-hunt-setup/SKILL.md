@@ -27,7 +27,7 @@ If the AE has already onboarded and just wants a single piece (e.g. re-login Lin
 Before starting, verify two things:
 
 1. **Sibling skills are available** — the agent should be able to use all four companion skills: `leads-hunt`, `leads-hunt-outreach`, `leads-hunt-add-target`, and `leads-hunt-voice`.
-2. **Workspace is writable** — `<workspace>/leads-hunt/` must be creatable (or already exist with recoverable workspace state). If a legacy `kb.md` exists with content, refuse unless the AE passes `--force`; we do NOT clobber prior notes silently.
+2. **Workspace is writable** — `<workspace>/leads-hunt/` must be creatable (or already exist with recoverable workspace state). A legacy `kb.md` may already exist from a prior run; treat that as resume-friendly state unless the AE explicitly asks to rewrite the compatibility file with `--force`.
 
 If either prerequisite is not satisfied, stop and ask the AE to fix it before continuing.
 
@@ -56,10 +56,10 @@ Idempotent: re-running on an existing dir is a no-op. `--force` overwrites the l
 
 ### Step 2 — Create blank-slate `style.md`
 
-Copy `<skill-discovery>/leads-hunt-outreach/references/style.md` to `<workspace>/leads-hunt/style.md`. Use the path the agent resolved when locating the `leads-hunt-outreach` skill (sibling skill discovery — see Pitfalls below).
+Copy `<skill-discovery>/leads-hunt-voice/references/empty-skeleton.md` to `<workspace>/leads-hunt/style.md`. Use the path the agent resolved when locating the `leads-hunt-voice` skill (sibling skill discovery — see Pitfalls below).
 
 ```bash
-cp "<leads-hunt-outreach-skill>/references/style.md" "<workspace>/leads-hunt/style.md"
+cp "<leads-hunt-voice-skill>/references/empty-skeleton.md" "<workspace>/leads-hunt/style.md"
 ```
 
 Do NOT pre-fill the voice file. It stays blank-slate; the AE fills it later via `leads-hunt-voice`.
@@ -207,6 +207,12 @@ python3 scripts/register_cron.py --dry-run
 ```
 
 This writes `<workspace>/leads-hunt/cron-suggestions.json` for later inspection.
+
+Current Ben workspace scheduler reference (installation-specific; verify instead of copying blindly):
+- Phase A — `46e35f4b` (`46e35f4b-3070-471a-94ce-5fc3d5d0f1c2`)
+- Phase B — `bfca9fcb` (`bfca9fcb-ec97-4764-aa82-f17db8596de6`)
+- Phase C — `0540add7` (`0540add7-bbd8-482f-93d6-bbc958ce2333`)
+- Phase D — `e17393fb` (`e17393fb-78fa-4719-a67d-88519560336d`)
 
 ## Final message
 

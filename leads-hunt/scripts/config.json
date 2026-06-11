@@ -8,7 +8,6 @@
   "run_log_ttl_days": 30,
   "smoke_test_query": "Microsoft",
   "paths": {
-    "skip_list": "{LEADS_HUNT_HOME}/skip-list.txt",
     "lead_gen_root": "{LEADS_HUNT_HOME}/data/lead-gen",
     "candidates_template": "candidates/{topic}-{date}.json",
     "csv_template": "leads-{topic}-{date}.csv",
@@ -17,7 +16,6 @@
     "run_log_template": "run-log-{date}.txt",
     "feedback_template": "feedback-{topic}.md",
     "browser_profile": "{LEADS_HUNT_HOME}/browser-profile/sales-nav",
-    "kb": "{LEADS_HUNT_HOME}/kb.md",
     "workspace_config": "{LEADS_HUNT_HOME}/config.json"
   },
   "external": {
