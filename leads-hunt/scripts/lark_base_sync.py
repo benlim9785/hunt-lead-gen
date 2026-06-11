@@ -93,7 +93,18 @@ def _extract_records(payload: dict[str, Any]) -> list[dict[str, Any]]:
     if isinstance(data.get("record"), dict):
         items = [data["record"]]
     records: list[dict[str, Any]] = []
-    for item in items:
+    field_names = data.get("fields") or []
+    record_ids = data.get("record_id_list") or []
+    for idx, item in enumerate(items):
+        if isinstance(item, list):
+            fields = {
+                str(field_names[col_idx]): value
+                for col_idx, value in enumerate(item)
+                if col_idx < len(field_names)
+            }
+            record_id = record_ids[idx] if idx < len(record_ids) else None
+            records.append({"record_id": record_id, "fields": fields})
+            continue
         if not isinstance(item, dict):
             continue
         fields = item.get("fields") if isinstance(item.get("fields"), dict) else None

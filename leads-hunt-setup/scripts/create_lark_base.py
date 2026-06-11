@@ -205,11 +205,11 @@ def _build_workflow_body(*, webhook_url: str, base_token: str, leads_table_id: s
                         {
                             "field_name": "Draft Message",
                             "operator": "is",
-                            "value": [{"value_type": "text", "value": "Yes"}],
+                            "value": [{"value_type": "option", "value": {"name": "Yes"}}],
                         }
                     ],
                     "trigger_control_list": [],
-                    "condition_list": [],
+                    "condition_list": None,
                 },
             },
             {

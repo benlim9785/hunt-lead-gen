@@ -1,24 +1,34 @@
-# Lark Base webhook handler spec
+# Lark Base webhook handler setup
 
-This document defines the expected AIME-side behavior when the `Leads` table in the leads-hunt Lark Base flips `Draft Message` to `Yes`.
+This doc covers the live `Leads -> Draft Message -> webhook -> Message Draft` automation for leads-hunt.
+
+## Current live endpoint
+
+- **Webhook endpoint:** `https://8765-63695237a9154ca7b1d59be422f9fa1b-cube-kubestrato-online6.code-server.strato-https-proxy.bytedance.net/leads-hunt/draft`
+- **Health check:** `https://8765-63695237a9154ca7b1d59be422f9fa1b-cube-kubestrato-online6.code-server.strato-https-proxy.bytedance.net/healthz`
+- **Base URL:** `https://bytedance.my.larkoffice.com/base/GhaRbzKzKa99GbsUA3RmDpWqywd`
+- **Leads table ID:** `tblbBRdDEIT3IQy2`
+- **Workflow name:** `Generate outreach draft when Draft Message = Yes`
+
+> The webhook URL is environment-specific. If the server is restarted on a different port or machine, update the Lark Base workflow and `<workspace>/leads-hunt/config.json` together.
 
 ## Trigger contract
 
-The Base automation should watch the `Leads` table and fire when:
+The Base automation watches the `Leads` table and fires when:
 
 - **Table:** `Leads`
 - **Field:** `Draft Message`
 - **Condition:** field value `is` `Yes`
 
-The workflow should `POST` JSON to the configured AIME webhook endpoint.
+The workflow sends a `POST` JSON request to the webhook URL.
 
 ### Expected request body
 
 ```json
 {
   "event": "leads_hunt_draft_requested",
-  "base_token": "<base_token>",
-  "table_id": "<leads_table_id>",
+  "base_token": "GhaRbzKzKa99GbsUA3RmDpWqywd",
+  "table_id": "tblbBRdDEIT3IQy2",
   "table_name": "Leads",
   "record_id": "rec_xxx",
   "message_field": "Message Draft",
@@ -26,78 +36,82 @@ The workflow should `POST` JSON to the configured AIME webhook endpoint.
 }
 ```
 
-### Endpoint configuration
-
-- During setup, pass the webhook URL into `leads-hunt-setup/scripts/create_lark_base.py` with:
-  - `--webhook-url <your-aime-webhook-endpoint>`
-  - or environment variable `AIME_LEADS_HUNT_WEBHOOK_URL`
-  - or environment variable `LEADS_HUNT_AIME_WEBHOOK_URL`
-- The setup helper stores that URL in `<workspace>/leads-hunt/config.json` under `lark_base.webhook_url`.
-- If no webhook URL is available yet, the Base can still be created first. In that case, leave the automation disabled and configure it later once the AIME endpoint exists.
-
 ## Handler behavior
 
-When the webhook fires, AIME should do the following in order:
+When the webhook fires, the server does the following:
 
-1. **Validate the payload**
-   - Confirm `event == leads_hunt_draft_requested`
-   - Confirm `record_id` is present
-   - Confirm the request points to the `Leads` table
+1. Validates the payload (`event`, `record_id`, `table_name`, Base/table match)
+2. Reads the current lead row from Lark Base by `record_id`
+3. Returns success without rewriting if:
+   - `Draft Message == Done` and `Message Draft` is already non-empty
+   - or `Draft Message` is no longer `Yes`
+4. Reads `<workspace>/leads-hunt/style.md` fresh on every request
+5. Generates a short outbound draft from the row's `Company`, `Summary`, `Topic`, and the current voice hints in `style.md`
+6. Writes the draft back to `Message Draft`
+7. Sets `Draft Message` to `Done`
 
-2. **Read the lead row from Lark Base**
-   - Read the latest row by `record_id`
-   - The minimum fields needed are:
-     - `Company`
-     - `Topic`
-     - `Score`
-     - `Sales Nav URL`
-     - `LinkedIn URL`
-     - `Summary`
-     - `Draft Message`
-     - `Message Draft`
-     - `Date`
-     - `Status`
+If generation fails, the handler returns a non-2xx response and leaves `Draft Message` at `Yes` so the AE can retry.
 
-   Suggested helper:
+## Files involved
 
-   ```bash
-   python3 scripts/lark_base_sync.py get-lead --record-id rec_xxx
-   ```
+### Webhook server
 
-3. **Idempotency guard**
-   - If `Draft Message` is already `Done` and `Message Draft` is non-empty, return success without generating a second draft.
-   - If `Draft Message` is no longer `Yes`, return success without doing anything.
+```bash
+python3 leads-hunt/scripts/draft_webhook_server.py --host 0.0.0.0 --port 8765
+```
 
-4. **Load AE voice and context**
-   - Read `<workspace>/leads-hunt/style.md` fresh for every request.
-   - Use the existing leads-hunt outreach behavior: the draft should reflect the AE's current voice, not a cached style snapshot.
+- Endpoint path: `/leads-hunt/draft`
+- Health path: `/healthz`
+- The public HTTPS URL comes from `aime ports` after the server starts listening.
 
-5. **Generate the draft**
-   - Draft a short outbound message for the company in the AE's voice.
-   - Use the row fields as the prompt context.
-   - Prioritize `Summary` as the outreach angle if present.
-   - If `Summary` is empty, infer the angle from `Topic`, `Company`, and any URLs available on the row.
+### Existing-Base connector
 
-6. **Write the draft back to Base**
-   - Write the generated text into `Message Draft`
-   - Set `Draft Message` to `Done`
+Use this helper when the Base already exists and only the webhook + local config need to be wired:
 
-   Suggested helper:
+```bash
+python3 leads-hunt-setup/scripts/connect_existing_lark_base.py \
+  --base-token GhaRbzKzKa99GbsUA3RmDpWqywd \
+  --base-url "https://bytedance.my.larkoffice.com/base/GhaRbzKzKa99GbsUA3RmDpWqywd" \
+  --webhook-url "https://8765-63695237a9154ca7b1d59be422f9fa1b-cube-kubestrato-online6.code-server.strato-https-proxy.bytedance.net/leads-hunt/draft"
+```
 
-   ```bash
-   python3 scripts/lark_base_sync.py update-draft --record-id rec_xxx --draft-file /tmp/draft.txt
-   ```
+What it does:
 
-7. **Failure behavior**
-   - Do **not** set `Draft Message` to `Done` if generation fails.
-   - Leave the field at `Yes` so the AE can retry after the underlying issue is fixed.
-   - Log the failure with the `record_id` and the reason.
+- resolves the 4 expected table IDs from the existing Base
+- creates or updates the `Draft Message = Yes` workflow
+- enables that workflow
+- writes `<workspace>/leads-hunt/config.json`
+- initializes `<workspace>/leads-hunt/style.md` from the empty voice skeleton if missing
+
+## Workflow shape
+
+The installed workflow uses:
+
+- **Trigger:** `SetRecordTrigger`
+  - table: `Leads`
+  - field: `Draft Message`
+  - condition: `is Yes`
+- **Action:** `HTTPClientAction`
+  - method: `POST`
+  - content type: `application/json`
+  - body: static JSON prefix + `$.step_trigger.recordId` + static suffix
+
+## Manual test flow
+
+1. Start the webhook server.
+2. Run `aime ports` and copy the public HTTPS URL for port `8765`.
+3. Connect the existing Base with `connect_existing_lark_base.py` using that URL.
+4. In the `Leads` table, set one test row's `Draft Message` field to `Yes`.
+5. Wait a few seconds.
+6. Confirm that:
+   - `Message Draft` is populated
+   - `Draft Message` has moved to `Done`
+
+> Note: `SetRecordTrigger` is a modification trigger. In practice, the clean human verification path is to flip the field inside the Lark Base UI. API-side updates were not observed to fire this trigger in my test run, so use a manual UI edit for final acceptance.
 
 ## Response contract
 
-AIME should return a 2xx JSON response on accepted requests.
-
-Example:
+### Success
 
 ```json
 {
@@ -107,11 +121,36 @@ Example:
 }
 ```
 
-If the event is invalid, return a non-2xx response with a short JSON error.
+### Idempotent noop
 
-## Implementation notes
+```json
+{
+  "accepted": true,
+  "record_id": "rec_xxx",
+  "status": "already_done"
+}
+```
 
-- Keep the Base row as the source of truth for the draft lifecycle.
-- Always read `style.md` fresh so updates from `leads-hunt-voice` take effect immediately.
-- Base workflow retries are possible, so the handler should remain idempotent.
-- The webhook path itself is environment-specific; the setup helper stores the exact URL that was used when the workflow was created.
+or
+
+```json
+{
+  "accepted": true,
+  "record_id": "rec_xxx",
+  "status": "noop_draft_state"
+}
+```
+
+### Invalid payload
+
+```json
+{
+  "error": "invalid_event"
+}
+```
+
+## Notes
+
+- `style.md` is read on every request so later voice edits take effect immediately.
+- The Base row is the source of truth for the draft lifecycle.
+- The webhook server is intentionally stdlib-only and can run directly inside the AIME workspace.
