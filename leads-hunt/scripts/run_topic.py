@@ -32,7 +32,7 @@ Exit codes:
   0  success
   1  failed (logged details to run-log)
   2  bad invocation
-  3  Sales Nav session expired (Phase A; or Phase C halted mid-run)
+  3  Sales Nav session expired (Phase A)
 """
 from __future__ import annotations
 
@@ -124,13 +124,7 @@ def cmd_discover_all(args, cfg) -> int:
 
 
 def cmd_dedup_all(args, cfg) -> int:
-    """Fan-out: run dedup for every enabled topic with stagger.
-
-    If any topic returns rc=3 (Sales Nav session expired mid-run), abort the
-    rest of the fan-out and propagate rc=3 — Phase D's sentinel check will
-    keep deliver from running, and the canary alert from Phase A tomorrow
-    will surface it.
-    """
+    """Fan-out: run dedup for every enabled topic with stagger."""
     from dedup_pipeline import run_dedup
     from topic_registry import load_topics, cfg_for_topic
     topics = load_topics(cfg)
@@ -149,10 +143,6 @@ def cmd_dedup_all(args, cfg) -> int:
               file=sys.stderr)
         try:
             rc = run_dedup(t["slug"], cfg_for_topic(cfg, t["slug"]), dry_run=args.dry_run)
-            if rc == 3:
-                print(f"[dedup-all] HALT: {t['slug']} returned rc=3 (Sales Nav session expired); "
-                      f"aborting remaining topics", file=sys.stderr)
-                return 3
             if rc != 0:
                 failures += 1
                 print(f"[dedup-all] {t['slug']} exited rc={rc}", file=sys.stderr)

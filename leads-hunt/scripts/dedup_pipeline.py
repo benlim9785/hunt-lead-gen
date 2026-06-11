@@ -25,7 +25,6 @@ Outputs:
 
 Exit codes:
   0  normal completion
-  3  BD SSO expired during Layer 4 (halts day; Phase D should not run)
   1  fatal error
 """
 from __future__ import annotations
@@ -144,7 +143,8 @@ def run_dedup(topic: str, cfg, dry_run: bool = False) -> int:
     # 3-layer dedup stack:
     #   Layer 2 (skip-list) — cheapest, in-memory set
     #   Layer 3 (kb.md)     — historical shipments, source of truth
-    #   Layer 4 (Sales Nav) — BD-wide CRM truth signal
+    #   Layer 4 (Sales Nav) — personal Sales Nav session check; if unavailable,
+    #                         continue and flag rows for manual CRM review
     skip_set = _load_skip_list(cfg)
 
     survivors: list[dict] = []
@@ -176,15 +176,19 @@ def run_dedup(topic: str, cfg, dry_run: bool = False) -> int:
             continue
 
         result = sales_nav_check(name, cfg)
+        layer4_unverified = False
         if result.get("error") == "sso-expired":
-            _log(f"[Phase C/{topic}] HALT: BD SSO expired during {name}", cfg)
-            return 3
-        if result.get("error") == "not-found":
+            _log(f"  layer4 session-expired (Sales Nav): {name} — including, flagged for manual review", cfg)
+            counts["layer4_not_in_crm"] += 1
+            c["sales_nav_not_found"] = True
+            layer4_unverified = True
+        elif result.get("error") == "not-found":
             # Company not in Sales Nav — can't confirm CRM status, but not a reason to drop.
             # Treat as not-in-CRM and let it through; flag in digest for manual review.
             _log(f"  layer4 not-found (Sales Nav): {name} — including, flagged for manual review", cfg)
             counts["layer4_not_in_crm"] += 1
             c["sales_nav_not_found"] = True
+            layer4_unverified = True
         elif result.get("error"):
             _log(f"  WARN layer4 error for {name}: {result.get('error')}", cfg)
             counts["errors"] += 1
@@ -195,7 +199,8 @@ def run_dedup(topic: str, cfg, dry_run: bool = False) -> int:
             _log(f"  SKIP layer4 (Sales Nav: in CRM): {name}", cfg)
             continue
 
-        counts["layer4_not_in_crm"] += 1
+        if not layer4_unverified:
+            counts["layer4_not_in_crm"] += 1
         # Apply final score floor
         score = int(c.get("score", 0))
         if score < cfg.get("score_floor", 8):
