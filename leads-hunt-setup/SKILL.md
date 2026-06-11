@@ -131,21 +131,29 @@ Either path is valid. Don't block.
 
 ### Step 5 — Schedule recurring runs
 
-Show the AE the 4 scheduled run commands from `leads-hunt`'s SKILL.md (Phase A 07:30, B 08:00, C 09:00, D 09:30). Ask:
+Show the AE the 4 daily recurring runs from `leads-hunt`'s SKILL.md (Phase A 07:30, B 08:00, C 09:00, D 09:30). Ask:
 
-> "Register them now? (y/n) — use the workspace's server-local timezone for these times."
+> "Register them now? (y/n) — these are daily AIME native scheduled tasks in the workspace/server timezone."
 
 If yes:
+
+1. Run the helper to emit the canonical AIME scheduler specs:
 
 ```bash
 python3 scripts/register_cron.py
 ```
 
-This registers the 4 canonical recurring jobs for the workflow. It should be idempotent and print the registered job IDs.
+2. Register the 4 recurring jobs through **AIME's native scheduler** using the `schedule` tool / AIME scheduler API (not system crontab).
+3. Because these are cron tasks, set a stop time if the user did not provide one. Use the platform default policy if needed.
+4. Verify that all 4 jobs appear in the scheduler after registration. If any are missing, tell the AE registration failed and they should not rely on automation yet.
 
-After registration, verify that all 4 jobs appear in the scheduler. If any are missing, tell the AE the scheduler registration failed and they should retry or inspect the local environment before relying on automation.
+If the AE says no, save the canonical scheduler specs for later:
 
-If the AE says no, save commands to `<workspace>/leads-hunt/cron-suggestions.txt` for later (the script accepts `--dry-run`).
+```bash
+python3 scripts/register_cron.py --dry-run
+```
+
+This writes `<workspace>/leads-hunt/cron-suggestions.json` for later inspection.
 
 ## Final message
 
@@ -159,7 +167,7 @@ When all 5 steps pass, send to Lark:
 
 2. **OTP timeout (60s)**. If the AE is slow pasting OTP, the script aborts. The agent's job is to keep the Lark conversation responsive — prompt explicitly with a deadline ("paste OTP in the next minute or I'll restart"). On abort, re-run step 3 from scratch. Don't try to resume mid-OTP-flow.
 
-3. **Scheduler registration can silently fail**. After step 6, always verify the recurring jobs are actually present before telling the AE automation is set up.
+3. **Scheduler registration can silently fail**. After step 5, always verify the recurring jobs are actually present before telling the AE automation is set up.
 
 4. **Sibling skill discovery**. If the agent resolves `leads-hunt` and `leads-hunt-setup` from different installation contexts, path resolution between them can fail. Every script that needs to reach into a sibling skill accepts a `--leads-hunt-skill <path>` override. The agent should resolve the path explicitly before invoking sibling scripts.
 

@@ -93,7 +93,8 @@ Phase A sends a different message (no leads):
 ⚠️ *ClawHunt: BD SSO expired*
 
 Cannot verify CRM today. Run:
-LK_EMAIL=... BD_EMAIL=... python3 /root/.openclaw/workspace-clawhunt/scripts/sales-nav-session-setup.py
+python3 <leads-hunt-skill>/scripts/sales_nav_session_setup.py
 
-Reply with OTP via Lark when prompted. Will retry tomorrow.
+Use the leads-hunt-setup VNC login flow to refresh the shared browser profile for LinkedIn / Sales Navigator.
+Complete any OTP / MFA / captcha directly inside the VNC browser, then retry the check.
 ```
