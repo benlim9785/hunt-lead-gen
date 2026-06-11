@@ -16,7 +16,7 @@ import os
 import re
 import subprocess
 import sys
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -48,6 +48,7 @@ def is_configured(cfg: dict) -> bool:
     return bool(
         section.get("base_token")
         and (tables.get("leads") or {}).get("id")
+        and (tables.get("customers") or {}).get("id")
         and (tables.get("skip_list") or {}).get("id")
         and (tables.get("discovery_patterns") or {}).get("id")
     )
@@ -404,6 +405,119 @@ def read_skip_list(cfg: dict) -> set[str]:
         if norm:
             values.add(norm)
     return values
+
+
+def read_customer_names(cfg: dict) -> list[str]:
+    records = _iter_records(cfg, "customers", field_ids=["Company"], page_size=200)
+    names: list[str] = []
+    for record in records:
+        text = _coerce_text((record.get("fields") or {}).get("Company"))
+        if text.strip():
+            names.append(text.strip())
+    return names
+
+
+def read_lead_names(cfg: dict) -> list[str]:
+    records = _iter_records(cfg, "leads", field_ids=["Company"], page_size=200)
+    names: list[str] = []
+    for record in records:
+        text = _coerce_text((record.get("fields") or {}).get("Company"))
+        if text.strip():
+            names.append(text.strip())
+    return names
+
+
+def append_skip_entries(
+    cfg: dict,
+    entries: list[tuple[str, str]],
+    *,
+    date_value: Any | None = None,
+) -> dict[str, int]:
+    summary = {"processed": 0, "created": 0, "skipped": 0}
+    if not entries:
+        return summary
+
+    existing = read_skip_list(cfg)
+    date_text = _normalize_date_string(date_value) or datetime.utcnow().date().isoformat()
+    for name, reason in entries:
+        raw_name = str(name or "").strip()
+        norm = _normalize(raw_name)
+        if not norm or norm in existing:
+            summary["skipped"] += 1
+            continue
+        values = {
+            "Domain/Company": raw_name,
+            "Reason": str(reason or "").strip(),
+            "Date Added": _as_datetime_string(date_text),
+        }
+        _record_upsert(cfg, "skip_list", values)
+        existing.add(norm)
+        summary["processed"] += 1
+        summary["created"] += 1
+    return summary
+
+
+def _split_pattern_lines(value: Any) -> list[str]:
+    text = _coerce_text(value)
+    out: list[str] = []
+    for line in text.splitlines():
+        cleaned = line.strip().lstrip("-•").strip()
+        if cleaned:
+            out.append(cleaned)
+    return out
+
+
+def read_discovery_patterns(cfg: dict, topic: str, days: int) -> dict[str, Any] | None:
+    records = _iter_records(
+        cfg,
+        "discovery_patterns",
+        field_ids=["Date", "Topic", "Good", "Bad"],
+        page_size=200,
+    )
+    cutoff = datetime.utcnow().date() - timedelta(days=max(0, int(days)))
+    matches: list[tuple[date, dict[str, Any]]] = []
+    wanted_topic = str(topic or "").strip()
+    for record in records:
+        fields = record.get("fields") or {}
+        record_topic = _coerce_text(fields.get("Topic")).strip()
+        if record_topic != wanted_topic:
+            continue
+        date_text = _normalize_date_string(fields.get("Date"))
+        if not date_text:
+            continue
+        try:
+            record_date = datetime.strptime(date_text, "%Y-%m-%d").date()
+        except ValueError:
+            continue
+        if record_date < cutoff:
+            continue
+        matches.append((record_date, fields))
+
+    if not matches:
+        return None
+
+    matches.sort(key=lambda item: item[0], reverse=True)
+    good: list[str] = []
+    bad: list[str] = []
+    seen_good: set[str] = set()
+    seen_bad: set[str] = set()
+    for _record_date, fields in matches:
+        for value in _split_pattern_lines(fields.get("Good")):
+            if value not in seen_good:
+                seen_good.add(value)
+                good.append(value)
+        for value in _split_pattern_lines(fields.get("Bad")):
+            if value not in seen_bad:
+                seen_bad.add(value)
+                bad.append(value)
+
+    return {
+        "window_days": int(days),
+        "topic": wanted_topic,
+        "good": good,
+        "bad": bad,
+        "entry_count": len(matches),
+    }
 
 
 def write_discovery_pattern(

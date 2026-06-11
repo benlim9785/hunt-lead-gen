@@ -1,6 +1,6 @@
 ---
 name: leads-hunt
-description: "Daily lead-gen pipeline for BytePlus AEs: SSO check → topic-rotation discovery → 3-layer dedup → Lark digest. Runs on OpenClaw via cron. AE-portable; per-AE state in workspace; LinkedIn Sales Nav + BD-corp creds per AE."
+description: "Daily lead-gen pipeline for BytePlus AEs: SSO check → topic-rotation discovery → 3-layer dedup → Lark digest. Lark Base is the primary data store for Leads, Customers, Skip List, and Discovery Patterns. AE-portable; per-AE state in workspace; LinkedIn Sales Nav + BD-corp creds per AE."
 author: Ben Lim
 license: MIT
 ---
@@ -14,7 +14,7 @@ Daily lead generation for BytePlus AIGC products (and any other product line the
 Before this skill works on a fresh OpenClaw install:
 
 1. **`openclaw onboard`** completed — Lark channel bound (`openclaw agents bindings | grep feishu` shows a binding).
-2. **`leads-hunt-setup`** run once — wizard creates `kb.md`, browser-profile, `.env` at `<workspace>/leads-hunt/`. Walks the AE through their own LinkedIn login + BD-corp Sales Nav SSO + LLM provider key.
+2. **`leads-hunt-setup`** run once — wizard creates the per-AE workspace, browser-profile, `.env`, and `<workspace>/leads-hunt/config.json` for the AE's Lark Base. Lark Base is the source of truth for Leads, Customers, Skip List, and Discovery Patterns.
 3. **`leads-hunt-voice`** used at least once (or `style.md` edited directly) — empty voice file works but produces flat outreach drafts.
 
 If the wizard hasn't run, scripts in this skill fail with a clear "run leads-hunt-setup first" error.
@@ -72,17 +72,17 @@ discover (browser-driven)  →  score (1-10 rubric)  →  dedup (3-layer stack) 
 ## Rules (non-negotiable)
 
 1. **Per-topic ceiling**: ≤5 leads NOT in CRM, score ≥8.
-2. **Auto-skip**: company website mentions BytePlus product names (Seedream/Seedance/ByteDance/VolcEngine/Doubao/Jimeng) → SKIP and add to skip-list.
+2. **Auto-skip**: company website mentions BytePlus product names (Seedream/Seedance/ByteDance/VolcEngine/Doubao/Jimeng) → SKIP and add to the Base `Skip List` table.
 3. **Cite sources**: every lead has a verified website URL + LinkedIn URL.
 4. **Voice**: outreach angle uses the AE's voice from `<workspace>/leads-hunt/style.md`. Manage via `leads-hunt-voice` skill or edit directly.
 5. **No tasking systems**: leads ship as CSV + Lark digest only.
 
 ## 3-layer dedup stack
 
-The pack uses a 3-layer dedup stack against the AE's local `kb.md` knowledge base + skip-list + live Sales Nav CRM check:
+The pack uses a 3-layer dedup stack against the AE's Lark Base plus the live Sales Nav CRM check:
 
-1. **Layer 1 — `skip-list.txt`** (cheapest): manual + auto-appended hard-skips.
-2. **Layer 2 — `kb.md`** (the AE's source of truth): markdown KB of every shipped lead and tracked customer. Replaces what was a server-backed leads/customers DB in Ben's setup.
+1. **Layer 1 — Base `Skip List`** (cheapest): manual + auto-appended hard-skips.
+2. **Layer 2 — Base `Customers` + Base `Leads`**: fuzzy company-name dedup via `kb.already_seen()`.
 3. **Layer 3 — Sales Nav CRM check** (the truth signal): live query via `sales_nav_check.py`, 24hr-cached.
 
 Full protocol + cache format + SSO failure handling: [references/dedup-process.md](references/dedup-process.md).
@@ -112,7 +112,7 @@ Full protocol + cache format + SSO failure handling: [references/dedup-process.m
 
 ## Side-effects (external systems)
 
-Phase D appends each shipped lead to `<workspace>/leads-hunt/kb.md` under `## Shipped Leads` so future runs see it via Layer 2 dedup. Idempotent — re-running Phase D the same day skips duplicates by name.
+Phase D upserts each shipped lead into the Base `Leads` table so future runs see it via Layer 2 dedup. The pipeline also reads Base `Customers`, Base `Skip List`, and Base `Discovery Patterns` directly.
 
 ## Cron scheduling (OpenClaw)
 
@@ -206,8 +206,8 @@ This is a **server-side join Sales Nav performs between LinkedIn's company entit
 
 **Implication for refactors**: any proposal to replace the Playwright-driven Sales Nav stack with a SaaS LinkedIn automation API will lose Layer 3 entirely.
 
-## Discovery patterns (seed; AE refines via `kb.md`)
+## Discovery patterns (seed; AE refines via Base `Discovery Patterns`)
 
-The AE's `kb.md` accrues a `## Discovery Patterns Learned` section over time as Phase B agent runs surface saturated/high-yield verticals. Phase B's brief reads recent entries from `kb.md` (`kb.read_recent_patterns()`) and feeds them into the next morning's prompt.
+The AE's Base `Discovery Patterns` table accrues good/bad learnings over time as Phase B runs surface saturated and high-yield signals. Phase B's brief reads recent entries from Base (`kb.read_recent_patterns()`) and feeds them into the next morning's prompt.
 
-The seed patterns Ben observed are documented in [references/discovery-rotation.md](references/discovery-rotation.md). Treat them as a starting point — your accumulated `kb.md` will diverge based on your own region, ICP, and outreach feedback.
+The seed patterns Ben observed are documented in [references/discovery-rotation.md](references/discovery-rotation.md). Treat them as a starting point — your accumulated Base patterns will diverge based on your own region, ICP, and outreach feedback.

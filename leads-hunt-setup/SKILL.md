@@ -1,6 +1,6 @@
 ---
 name: leads-hunt-setup
-description: "First-run onboarding wizard for a new AE setting up leads-hunt on AIME. Walks through workspace init, LinkedIn + Sales Navigator login, kb.md init, topic scaffolding, Lark Base setup, and recurring run setup."
+description: "First-run onboarding wizard for a new AE setting up leads-hunt on AIME. Walks through workspace init, LinkedIn + Sales Navigator login, topic scaffolding, Lark Base setup, and recurring run setup. Lark Base is the system of record for runtime lead data."
 author: Ben Lim
 license: MIT
 ---
@@ -27,7 +27,7 @@ If the AE has already onboarded and just wants a single piece (e.g. re-login Lin
 Before starting, verify two things:
 
 1. **Sibling skills are available** — the agent should be able to use all four companion skills: `leads-hunt`, `leads-hunt-outreach`, `leads-hunt-add-target`, and `leads-hunt-voice`.
-2. **Workspace is writable** — `<workspace>/leads-hunt/` must be creatable (or already exist with a recoverable `kb.md`). If `kb.md` exists with content, refuse unless the AE passes `--force`; we do NOT clobber a populated KB.
+2. **Workspace is writable** — `<workspace>/leads-hunt/` must be creatable (or already exist with recoverable workspace state). If a legacy `kb.md` exists with content, refuse unless the AE passes `--force`; we do NOT clobber prior notes silently.
 
 If either prerequisite is not satisfied, stop and ask the AE to fix it before continuing.
 
@@ -42,13 +42,15 @@ python3 scripts/init_state.py
 Resolves the workspace root from the current AIME environment and creates:
 - `<workspace>/leads-hunt/data/`
 - `<workspace>/leads-hunt/browser-profile/`
-- `<workspace>/leads-hunt/kb.md` with the H2 skeleton:
+- a legacy compatibility file at `<workspace>/leads-hunt/kb.md` with the H2 skeleton:
   - `## Customers`
   - `## Shipped Leads`
   - `## Skip List`
   - `## Discovery Patterns Learned`
 
-Idempotent: re-running on an existing dir is a no-op. `--force` overwrites kb.md (only do this on explicit AE confirmation in Lark).
+That local `kb.md` is **not** the runtime source of truth anymore. After step 5, the AE's Lark Base is authoritative for Leads, Customers, Skip List, and Discovery Patterns.
+
+Idempotent: re-running on an existing dir is a no-op. `--force` overwrites the legacy `kb.md` compatibility file (only do this on explicit AE confirmation in Lark).
 
 **If AE refuses (says "I already did this manually")**: skip to step 2; the script's no-op behaviour means no harm done.
 
@@ -154,9 +156,10 @@ What this step must do:
    - `Customers`
    - `Skip List`
    - `Discovery Patterns`
-3. Save the Base token, Base URL, table IDs, webhook URL, and workflow metadata to:
+3. Treat that Base as the system of record for runtime lead data.
+4. Save the Base token, Base URL, table IDs, webhook URL, and workflow metadata to:
    - `<workspace>/leads-hunt/config.json`
-4. If a webhook URL is supplied, also create + enable the Base automation that:
+5. If a webhook URL is supplied, also create + enable the Base automation that:
    - watches `Leads.Draft Message`
    - triggers when the value becomes `Yes`
    - `POST`s the lead row context to AIME's webhook endpoint
@@ -249,7 +252,7 @@ The wizard is step-addressable. If the AE drops mid-flow and comes back, the age
 
 1. Re-check which prerequisites are already satisfied.
 2. Inspect `<workspace>/leads-hunt/` for what already exists:
-   - `kb.md` exists → skip step 1.
+   - `data/` or the legacy `kb.md` compatibility file exists → step 1 is probably done.
    - `style.md` exists → skip step 2.
    - `browser-profile/` has cookies AND `sales_nav_query.py BytePlus` returns JSON → skip step 3.
    - At least one enabled topic file → skip step 4.

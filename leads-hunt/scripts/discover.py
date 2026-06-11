@@ -7,7 +7,7 @@ It prepares a "brief" the agent reads at start of Phase B:
 
   - today's day-type and method
   - last 5 entries from feedback-{topic}.md (per-topic agent reflections)
-  - recent kb.md patterns (good/bad signals from prior shipments)  [Phase 2]
+  - recent Lark Base discovery patterns (good/bad signals from prior shipments)
   - the topic's ICP file
   - target candidate count (~18)
 
@@ -80,76 +80,98 @@ def _read_feedback_tail(topic: str, cfg, n_entries: int = 5) -> str:
 
 
 def _format_kb_patterns(patterns: dict | None) -> str:
-    """Format kb.read_recent_patterns() output as a readable brief section.
-
-    kb.read_recent_patterns(topic, days, cfg) lives in
-    Phase 2. Expected schema (mirrors the legacy feedback-summary):
-        {
-          "window_days": 14,
-          "stats": {"total_rated": int, "good": int, "bad": int},
-          "patterns_detected": [str, ...],
-          "high_yield_verticals": [{"vertical": str, "good": int, "bad": int, "examples": [str]}, ...],
-          "saturated_verticals": [{"vertical": str, "good": int, "bad": int, "tags": [str], "examples": [str]}, ...],
-          "region_distribution": [{"region": str, "good": int, "bad": int}, ...],
-          "examples": {"good": [...], "bad": [...]}
-        }
-    """
+    """Format discovery-pattern output as a readable brief section."""
     if not patterns:
         return ""
-    if patterns.get("stats", {}).get("total_rated", 0) == 0:
-        return (f"## Recent kb.md patterns\n\n"
-                f"(no rated leads in the last {patterns.get('window_days', 14)}d; no learning signal yet)\n")
 
-    lines = [f"## Recent kb.md patterns (last {patterns['window_days']}d, from your kb.md good/bad notes)"]
-    lines.append("")
-    s = patterns["stats"]
-    lines.append(f"**Stats**: {s['total_rated']} rated total - {s['good']} good, {s['bad']} bad")
-    lines.append("")
+    if patterns.get("stats"):
+        if patterns.get("stats", {}).get("total_rated", 0) == 0:
+            return (
+                f"## Recent discovery patterns\n\n"
+                f"(no rated leads in the last {patterns.get('window_days', 14)}d; no learning signal yet)\n"
+            )
 
-    if patterns.get("patterns_detected"):
-        lines.append("**Patterns detected (act on these)**:")
-        for p in patterns["patterns_detected"]:
-            lines.append(f"- {p}")
+        lines = [
+            f"## Recent discovery patterns (last {patterns['window_days']}d, from your Discovery Patterns Base table)"
+        ]
+        lines.append("")
+        s = patterns["stats"]
+        lines.append(f"**Stats**: {s['total_rated']} rated total - {s['good']} good, {s['bad']} bad")
         lines.append("")
 
-    if patterns.get("high_yield_verticals"):
-        lines.append("**High-yield verticals (lean into these)**:")
-        for v in patterns["high_yield_verticals"]:
-            ex = ", ".join(v["examples"][:3])
-            lines.append(f"- `{v['vertical']}`: {v['good']}/{v['good']+v['bad']} good. Examples: {ex}")
-        lines.append("")
+        if patterns.get("patterns_detected"):
+            lines.append("**Patterns detected (act on these)**:")
+            for p in patterns["patterns_detected"]:
+                lines.append(f"- {p}")
+            lines.append("")
 
-    if patterns.get("saturated_verticals"):
-        lines.append("**Saturated verticals (avoid these)**:")
-        for v in patterns["saturated_verticals"]:
-            ex = ", ".join(v["examples"][:3])
-            tags = ", ".join(v.get("tags", [])[:5])
-            lines.append(f"- `{v['vertical']}`: {v['bad']}/{v['good']+v['bad']} bad. Tags: {tags}. Examples: {ex}")
-        lines.append("")
+        if patterns.get("high_yield_verticals"):
+            lines.append("**High-yield verticals (lean into these)**:")
+            for v in patterns["high_yield_verticals"]:
+                ex = ", ".join(v["examples"][:3])
+                lines.append(f"- `{v['vertical']}`: {v['good']}/{v['good']+v['bad']} good. Examples: {ex}")
+            lines.append("")
 
-    if patterns.get("region_distribution"):
-        lines.append("**Region distribution (good vs bad)**:")
-        for r in patterns["region_distribution"][:6]:
-            lines.append(f"- {r['region']}: {r['good']} good, {r['bad']} bad")
-        lines.append("")
+        if patterns.get("saturated_verticals"):
+            lines.append("**Saturated verticals (avoid these)**:")
+            for v in patterns["saturated_verticals"]:
+                ex = ", ".join(v["examples"][:3])
+                tags = ", ".join(v.get("tags", [])[:5])
+                lines.append(f"- `{v['vertical']}`: {v['bad']}/{v['good']+v['bad']} bad. Tags: {tags}. Examples: {ex}")
+            lines.append("")
 
-    good_ex = patterns.get("examples", {}).get("good", [])[:5]
-    bad_ex = patterns.get("examples", {}).get("bad", [])[:5]
-    if good_ex:
-        lines.append("**Recent good ratings** (mirror these patterns):")
-        for e in good_ex:
-            tags = ", ".join(e.get("tags") or [])
-            reason = e.get("reason") or "(no reason)"
-            lines.append(f"- {e['company']} ({e.get('vertical') or '?'}, {e.get('region') or '?'}): {reason} [tags: {tags}]")
-        lines.append("")
-    if bad_ex:
-        lines.append("**Recent bad ratings** (avoid these patterns):")
-        for e in bad_ex:
-            tags = ", ".join(e.get("tags") or [])
-            reason = e.get("reason") or "(no reason)"
-            lines.append(f"- {e['company']} ({e.get('vertical') or '?'}, {e.get('region') or '?'}): {reason} [tags: {tags}]")
-        lines.append("")
+        if patterns.get("region_distribution"):
+            lines.append("**Region distribution (good vs bad)**:")
+            for r in patterns["region_distribution"][:6]:
+                lines.append(f"- {r['region']}: {r['good']} good, {r['bad']} bad")
+            lines.append("")
 
+        good_ex = patterns.get("examples", {}).get("good", [])[:5]
+        bad_ex = patterns.get("examples", {}).get("bad", [])[:5]
+        if good_ex:
+            lines.append("**Recent good ratings** (mirror these patterns):")
+            for e in good_ex:
+                tags = ", ".join(e.get("tags") or [])
+                reason = e.get("reason") or "(no reason)"
+                lines.append(f"- {e['company']} ({e.get('vertical') or '?'}, {e.get('region') or '?'}): {reason} [tags: {tags}]")
+            lines.append("")
+        if bad_ex:
+            lines.append("**Recent bad ratings** (avoid these patterns):")
+            for e in bad_ex:
+                tags = ", ".join(e.get("tags") or [])
+                reason = e.get("reason") or "(no reason)"
+                lines.append(f"- {e['company']} ({e.get('vertical') or '?'}, {e.get('region') or '?'}): {reason} [tags: {tags}]")
+            lines.append("")
+
+        return "\n".join(lines)
+
+    window_days = patterns.get("window_days", 14)
+    good = patterns.get("good") or []
+    bad = patterns.get("bad") or []
+    entry_count = patterns.get("entry_count", 0)
+    if not good and not bad:
+        return (
+            f"## Recent discovery patterns\n\n"
+            f"(no Discovery Patterns rows found for `{patterns.get('topic', '')}` in the last {window_days}d)\n"
+        )
+
+    lines = [
+        f"## Recent discovery patterns (last {window_days}d, from your Discovery Patterns Base table)",
+        "",
+    ]
+    if entry_count:
+        lines.append(f"**Entries reviewed**: {entry_count}")
+        lines.append("")
+    if good:
+        lines.append("**Good signals to lean into:**")
+        for value in good[:10]:
+            lines.append(f"- {value}")
+        lines.append("")
+    if bad:
+        lines.append("**Bad signals to avoid:**")
+        for value in bad[:10]:
+            lines.append(f"- {value}")
+        lines.append("")
     return "\n".join(lines)
 
 
@@ -205,8 +227,7 @@ def print_brief(topic: str, cfg, dry_run: bool = False) -> int:
     print("If signals are mixed (e.g., uses third-party APIs but also claims a 'custom model'), default to **skip**. Ambiguity wastes time.")
     print()
 
-    # Pull pattern signals from kb.md (your good/bad notes from prior shipments).
-    # kb.read_recent_patterns is implemented in kb.py.
+    # Pull pattern signals from the Discovery Patterns Base table.
     kb = _kb()
     patterns = None
     if kb is not None:

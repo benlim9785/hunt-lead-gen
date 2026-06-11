@@ -10,8 +10,7 @@ Steps:
   1. Read per-topic CSVs at {LEADS_HUNT_HOME}/data/lead-gen/leads-{topic}-YYYY-MM-DD.csv
   2. Write aggregate CSV (sorted by Score desc).
   3. Print digest with top 5 + counts + CSV path.
-  4. Append shipped leads to kb.md so future Phase C runs dedup against them.
-  5. Upsert shipped leads into the configured Lark Base Leads table.
+  4. Upsert shipped leads into the configured Lark Base Leads table.
 
 Voice rules: no em-dash, light emoji only (⭐ 🌐 💡 📊 🔍 ⚠️ 📁 ✅).
 """
@@ -26,15 +25,6 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from write_csv import write_aggregate_csv  # noqa: E402
-
-
-def _kb():
-    """Lazy import of kb module (built in Phase 2)."""
-    try:
-        import kb  # type: ignore
-        return kb
-    except ImportError:
-        return None
 
 
 def _base_sync():
@@ -137,19 +127,6 @@ def deliver(cfg, dry_run: bool = False) -> int:
     print(_format_digest(today, top5, rows_by_topic, aggregate_path, topics))
 
     if not dry_run:
-        # Append shipped leads to kb.md so Phase C can dedup against them on future runs.
-        kb = _kb()
-        if kb is not None:
-            try:
-                kb.append_shipped(combined, today, cfg)
-            except Exception as e:
-                print(f"[deliver] WARN: kb.append_shipped failed (non-fatal): {e}", file=sys.stderr)
-        else:
-            print(
-                "[deliver] INFO: kb.py not yet available; shipped leads not logged to kb.md (Phase 2 wires this in).",
-                file=sys.stderr,
-            )
-
         base_sync = _base_sync()
         if base_sync is not None:
             try:
