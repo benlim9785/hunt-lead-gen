@@ -43,7 +43,7 @@ if _args.home:
     os.environ["LEADS_HUNT_HOME"] = _args.home
 
 from _config import load_config  # noqa: E402
-from _linkedin_session import ensure_session_profile  # noqa: E402
+from _linkedin_session import cleanup_temp_profile, prepare_temp_linkedin_profile  # noqa: E402
 
 CFG = load_config()
 PROFILE_DIR = CFG["paths"]["browser_profile"]
@@ -58,65 +58,77 @@ QUERY = _args.company
 
 
 async def main():
-    preflight = ensure_session_profile(PROFILE_DIR)
-    if not preflight["ok"]:
+    session = prepare_temp_linkedin_profile(PROFILE_DIR)
+    if not session["ok"]:
         print("needs-reauth", file=sys.stderr)
         sys.exit(3)
 
     found_response = None
-    async with async_playwright() as p:
-        ctx = await p.chromium.launch_persistent_context(
-            user_data_dir=PROFILE_DIR,
-            headless=True,
-            user_agent=UA,
-            viewport={"width": 1280, "height": 800},
-            locale="en-US",
-            timezone_id="Asia/Kuala_Lumpur",
-            args=["--disable-blink-features=AutomationControlled"],
-        )
-        await ctx.add_init_script("Object.defineProperty(navigator,'webdriver',{get:()=>undefined});")
-        page = ctx.pages[0] if ctx.pages else await ctx.new_page()
+    temp_root = session.get("temp_root")
+    temp_profile_dir = session.get("temp_profile_dir")
+    try:
+        async with async_playwright() as p:
+            ctx = await p.chromium.launch_persistent_context(
+                user_data_dir=temp_profile_dir,
+                headless=True,
+                user_agent=UA,
+                viewport={"width": 1280, "height": 800},
+                locale="en-US",
+                timezone_id="Asia/Kuala_Lumpur",
+                args=["--disable-blink-features=AutomationControlled"],
+            )
+            await ctx.add_init_script("Object.defineProperty(navigator,'webdriver',{get:()=>undefined});")
+            linkedin_cookies = [
+                cookie
+                for cookie in await ctx.cookies(["https://www.linkedin.com", "https://www.linkedin.com/sales/"])
+                if "linkedin.com" in cookie.get("domain", "")
+            ]
+            if linkedin_cookies:
+                await ctx.add_cookies(linkedin_cookies)
+            page = ctx.pages[0] if ctx.pages else await ctx.new_page()
 
-        async def on_response(resp):
-            nonlocal found_response
-            if "salesApiAccountSearch" in resp.url and resp.status == 200:
-                try:
-                    found_response = await resp.text()
-                except Exception:
-                    pass
+            async def on_response(resp):
+                nonlocal found_response
+                if "salesApiAccountSearch" in resp.url and resp.status == 200:
+                    try:
+                        found_response = await resp.text()
+                    except Exception:
+                        pass
 
-        page.on("response", on_response)
+            page.on("response", on_response)
 
-        target = f"https://www.linkedin.com/sales/search/company?keywords={QUERY.replace(' ', '%20')}"
-        await page.goto(target, wait_until="domcontentloaded", timeout=30000)
-        await page.wait_for_timeout(10000)
+            target = f"https://www.linkedin.com/sales/search/company?keywords={QUERY.replace(' ', '%20')}"
+            await page.goto(target, wait_until="domcontentloaded", timeout=30000)
+            await page.wait_for_timeout(10000)
 
-        lower_url = page.url.lower()
-        title = await page.title()
-        body = await page.evaluate("document.body.innerText")
-        lower_title = (title or "").lower()
-        lower_body = (body or "").lower()
+            lower_url = page.url.lower()
+            title = await page.title()
+            body = await page.evaluate("document.body.innerText")
+            lower_title = (title or "").lower()
+            lower_body = (body or "").lower()
 
-        logged_out = (
-            SSO_HOST in lower_url
-            or "/login" in lower_url
-            or "/checkpoint" in lower_url
-            or "/authwall" in lower_url
-        )
-        sales_nav_ui_detected = (
-            "linkedin.com/sales/" in lower_url
-            or "sales navigator" in lower_title
-            or "account lists" in lower_body
-            or "lead lists" in lower_body
-            or "saved searches" in lower_body
-        )
+            logged_out = (
+                SSO_HOST in lower_url
+                or "/login" in lower_url
+                or "/checkpoint" in lower_url
+                or "/authwall" in lower_url
+            )
+            sales_nav_ui_detected = (
+                "linkedin.com/sales/" in lower_url
+                or "sales navigator" in lower_title
+                or "account lists" in lower_body
+                or "lead lists" in lower_body
+                or "saved searches" in lower_body
+            )
 
-        if logged_out or not sales_nav_ui_detected:
-            print("needs-reauth", file=sys.stderr)
+            if logged_out or not sales_nav_ui_detected:
+                print("needs-reauth", file=sys.stderr)
+                await ctx.close()
+                sys.exit(3)
+
             await ctx.close()
-            sys.exit(3)
-
-        await ctx.close()
+    finally:
+        cleanup_temp_profile(temp_root)
 
     if not found_response:
         print("no-search-response-captured", file=sys.stderr)

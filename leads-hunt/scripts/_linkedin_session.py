@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import shutil
 import sqlite3
+import tempfile
 import time
 from pathlib import Path
 from typing import Callable
@@ -38,8 +39,9 @@ def chrome_ts_to_unix(chrome_ts: int | None) -> int | None:
 
 def cookie_db_path(profile_dir: str | Path) -> Path:
     profile_dir = Path(profile_dir)
-    default_cookie_db = profile_dir / "Default" / "Cookies"
-    if default_cookie_db.exists():
+    default_dir = profile_dir / "Default"
+    default_cookie_db = default_dir / "Cookies"
+    if default_cookie_db.exists() or default_dir.exists():
         return default_cookie_db
     return profile_dir / "Cookies"
 
@@ -265,3 +267,31 @@ def ensure_session_profile(primary_profile_dir: str | Path, status: StatusFn | N
         "details": primary,
         "synced": False,
     }
+
+
+def prepare_temp_linkedin_profile(primary_profile_dir: str | Path, status: StatusFn | None = None) -> dict:
+    session = ensure_session_profile(primary_profile_dir, status=status)
+    if not session.get("ok"):
+        return session
+
+    best = choose_best_session_source(primary_profile_dir)
+    source_profile_dir = Path((best or session["details"])["profile_dir"]).expanduser().resolve()
+    temp_root = Path(tempfile.mkdtemp(prefix="sales-nav-profile-"))
+    temp_profile_dir = temp_root / "profile"
+    (temp_profile_dir / "Default").mkdir(parents=True, exist_ok=True)
+    sync_cookie_db(source_profile_dir, temp_profile_dir, status=status)
+    temp_details = inspect_profile_session(temp_profile_dir)
+
+    session.update({
+        "temp_root": str(temp_root),
+        "temp_profile_dir": str(temp_profile_dir),
+        "temp_details": temp_details,
+        "temp_source_profile_dir": str(source_profile_dir),
+    })
+    return session
+
+
+def cleanup_temp_profile(temp_root: str | Path | None) -> None:
+    if not temp_root:
+        return
+    shutil.rmtree(Path(temp_root), ignore_errors=True)
