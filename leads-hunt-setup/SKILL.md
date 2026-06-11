@@ -1,6 +1,6 @@
 ---
 name: leads-hunt-setup
-description: "First-run onboarding wizard for a new AE setting up leads-hunt on AIME. Walks through workspace init, LinkedIn login, BD Sales Nav SSO, kb.md init, topic scaffolding, and recurring run setup."
+description: "First-run onboarding wizard for a new AE setting up leads-hunt on AIME. Walks through workspace init, LinkedIn + Sales Navigator login, kb.md init, topic scaffolding, and recurring run setup."
 author: Ben Lim
 license: MIT
 ---
@@ -9,7 +9,7 @@ license: MIT
 
 A conversational, Lark-driven onboarding wizard. Triggered when a new BytePlus AE says something like *"clawdia, set me up for leads hunt"*. Targets ~30 minutes end-to-end.
 
-This skill is a **protocol the agent follows**, not a single script. The agent reads SKILL.md, drives a 6-step Q&A in Lark, and shells out to helper scripts in `scripts/` for the actual work.
+This skill is a **protocol the agent follows**, not a single script. The agent reads SKILL.md, drives a 5-step Q&A in Lark, and shells out to helper scripts in `scripts/` for the actual work.
 
 AIME provides the host agent runtime — do not ask the AE for any LLM provider keys. Any drafting, scoring, or per-topic research the pack needs is performed by the host agent inline.
 
@@ -17,9 +17,9 @@ AIME provides the host agent runtime — do not ask the AE for any LLM provider 
 
 - First setup of `leads-hunt` for a new AE on AIME.
 - Re-running specific steps after a partial failure (the wizard supports resuming).
-- After a BD-corp password change or LinkedIn re-auth.
+- After a LinkedIn or Sales Navigator re-auth.
 
-If the AE has already onboarded and just wants a single piece (e.g. re-login LinkedIn), the agent should skip ahead to that step instead of doing the full 6-step flow. The wizard is idempotent — re-running steps 1-2 is cheap.
+If the AE has already onboarded and just wants a single piece (e.g. re-login LinkedIn), the agent should skip ahead to that step instead of doing the full 5-step flow. The wizard is idempotent — re-running steps 1-2 is cheap.
 
 ## Prerequisites (check BEFORE step 1)
 
@@ -30,7 +30,7 @@ Before starting, verify two things:
 
 If either prerequisite is not satisfied, stop and ask the AE to fix it before continuing.
 
-## The 6-step wizard
+## The 5-step wizard
 
 ### Step 1 — Detect workspace + create state dir
 
@@ -117,66 +117,7 @@ python3 <leads-hunt-skill>/scripts/sales_nav_query.py BytePlus
 
 Must return JSON. If it returns `needs-reauth`, the setup script lied — the heuristic is fragile. Re-run setup, including spinning up a fresh cloud browser session. Three strikes → escalate to `references/troubleshooting.md`.
 
-### Step 4 — BD-corporate Sales Nav SSO
-
-Use the same cloud browser VNC pattern as step 3, but for the AE's BD-corporate Sales Nav seat.
-
-High-level protocol:
-
-1. **Reuse the active cloud browser if possible, otherwise spin up a new one**
-   - If the VNC session from step 3 is still active and the browser profile is still attached to `<workspace>/leads-hunt/browser-profile/`, reuse it.
-   - Otherwise, start a fresh cloud browser session that writes into the same browser profile directory.
-   - In either case, surface to the AE in Lark:
-     - the **VNC URL** to open, and
-     - the **VNC password** (or access token) needed to connect.
-
-2. **Guide the AE to log into the BD-corporate Sales Nav account inside VNC**
-   - Ask the AE to connect to the VNC browser and open Sales Navigator using their BD-corporate account.
-   - The goal for this step is a live BD-corporate Sales Nav seat inside the remote Chromium, not another credential exchange in Lark.
-   - Handle any SSO, MFA, OTP, app-push, or captcha challenge entirely inside the VNC browser. Do **not** ask the AE to paste codes or passwords into Lark.
-   - When they are done, have them reply in Lark: *"Done, I'm logged into my BD Sales Nav account in the cloud browser."*
-
-3. **Capture the actual VNC display to verify the BD seat login state**
-   - After the AE confirms, capture a screenshot directly from the live VNC display on `DISPLAY=:1`. Use `scrot` if available, or fall back to `xwd`, so the image reflects the exact browser state the AE is viewing inside VNC.
-   - Example capture commands:
-
-```bash
-DISPLAY=:1 scrot /tmp/leads-hunt-vnc-verify-step4.png
-```
-
-   - Or, if `scrot` is unavailable:
-
-```bash
-DISPLAY=:1 xwd -root -silent -out /tmp/leads-hunt-vnc-verify-step4.xwd
-```
-
-   - Do **not** open a new managed browser session for verification. Verification must inspect the same VNC browser session where the AE completed BD SSO.
-   - Inspect the captured VNC screenshot for an authenticated Sales Navigator state, ideally including indicators such as `linkedin.com/sales/home`, the Sales Navigator home page, or other clearly logged-in Sales Nav UI.
-   - If the captured VNC screenshot still shows a sign-in page, SSO prompt, or error state, tell the AE what you see and ask them to finish the login in the same VNC browser, then capture the VNC display again.
-   - Only continue once the VNC screenshot clearly shows an authenticated Sales Navigator session for the BD-corporate seat.
-
-4. **Persist the session via the existing helper script**
-   - Once the screenshot check passes, run from the `leads-hunt` skill's scripts dir (NOT this skill — we don't duplicate playwright code):
-
-```bash
-python3 <leads-hunt-skill>/scripts/sales_nav_session_setup.py
-```
-
-   - This script should pick up the cookies from `<workspace>/leads-hunt/browser-profile/` that were created or refreshed by the cloud browser, and normalize them into the format used by the rest of the pack.
-
-After login, verify Salesforce sync:
-
-```bash
-python3 <leads-hunt-skill>/scripts/sales_nav_query.py BytePlus
-```
-
-Look for `crmStatus` in the response payload. If absent, the AE's seat does NOT have Salesforce sync enabled — Layer 3 dedup will be dead. Tell the AE:
-
-> "Your BD seat is logged in, but Salesforce sync is not active on this seat. This is an IT thing — open a ticket asking BD IT to enable Sales Nav ↔ Salesforce sync for your seat. The pipeline will run without it but you'll get false positives in dedup."
-
-Allow them to proceed (it's not blocking, just degraded).
-
-### Step 5 — Topic file scaffolding
+### Step 4 — Topic file scaffolding
 
 Ask:
 
@@ -188,7 +129,7 @@ Ask:
 
 Either path is valid. Don't block.
 
-### Step 6 — Schedule recurring runs
+### Step 5 — Schedule recurring runs
 
 Show the AE the 4 scheduled run commands from `leads-hunt`'s SKILL.md (Phase A 07:30, B 08:00, C 09:00, D 09:30). Ask:
 
@@ -208,7 +149,7 @@ If the AE says no, save commands to `<workspace>/leads-hunt/cron-suggestions.txt
 
 ## Final message
 
-When all 6 steps pass, send to Lark:
+When all 5 steps pass, send to Lark:
 
 > "All set. Voice file at `<workspace>/leads-hunt/style.md` is empty. Chat with me anytime to teach me your style — try *'add this to my outreach voice: [paste a real message]'* or *'set my voice rhythm to: [describe how you write]'*. You can do this now, later, or iteratively."
 
@@ -224,7 +165,7 @@ When all 6 steps pass, send to Lark:
 
 5. **Empty style.md is fine**. Step 2 creates a blank-slate `style.md`. Do NOT pre-fill it with examples or guess at the AE's voice. The wizard's final message tells the AE how to fill it later. Resist the temptation to be helpful here — a wrong voice is worse than no voice.
 
-6. **Credentials never logged**. LinkedIn email/password, BD creds, OTP — none of these get echoed to Lark, written to logs, or persisted outside their canonical location (`browser-profile/` for cookies, `.env` for non-secret config). The agent must never repeat back a credential to confirm it; ask the AE to re-paste if unsure.
+6. **Credentials never logged**. LinkedIn credentials or one-time codes should never be echoed to Lark, written to logs, or persisted outside their canonical location (`browser-profile/` for cookies, `.env` for non-secret config). The agent must never repeat back a credential to confirm it; ask the AE to re-paste if unsure.
 
 ## Error recovery — quick pointers
 
@@ -234,7 +175,6 @@ When all 6 steps pass, send to Lark:
 | Workspace init fails | Confirm the current workspace is writable and retry step 1. |
 | LinkedIn `Wrong email or password` | Re-prompt the AE; common is typo'd password. |
 | LinkedIn captcha | Manual seasoning (see Pitfall #1). |
-| `crmStatus` missing in Sales Nav response | BD seat lacks Salesforce sync; escalate to BD IT. |
 | Recurring job didn't fire next morning | Re-check scheduler registration and confirm the expected jobs were actually created. |
 
 Full failure-mode catalog: [references/troubleshooting.md](references/troubleshooting.md).
@@ -248,9 +188,9 @@ The wizard is step-addressable. If the AE drops mid-flow and comes back, the age
 2. Inspect `<workspace>/leads-hunt/` for what already exists:
    - `kb.md` exists → skip step 1.
    - `style.md` exists → skip step 2.
-   - `browser-profile/` has cookies AND `sales_nav_query.py BytePlus` returns JSON → skip steps 3/4.
-   - At least one enabled topic file → skip step 5.
-   - The scheduler already shows 4 leads-hunt jobs → skip step 6.
+   - `browser-profile/` has cookies AND `sales_nav_query.py BytePlus` returns JSON → skip step 3.
+   - At least one enabled topic file → skip step 4.
+   - The scheduler already shows 4 leads-hunt jobs → skip step 5.
 3. Resume from the first unfinished step.
 
 Ask the AE before skipping a step: *"Looks like step 3 is already done — your LinkedIn session is live. Skip it?"* — give them an out in case they want to re-do it (e.g. cookie rotation).

@@ -2,9 +2,11 @@
 Sales Nav company search using the persistent browser profile.
 
 Reuses $LEADS_HUNT_HOME/browser-profile/sales-nav/ — no credentials needed.
-If the upstream session has expired (LinkedIn login wall, checkpoint, or a
-corporate SSO host redirect), exits with code 3 and prints "needs-reauth"
-so the caller can trigger sales_nav_session_setup.py to refresh.
+The authenticated session is expected to be established manually in the VNC
+browser flow used by leads-hunt-setup. If the persisted session has expired
+(LinkedIn login wall, checkpoint, or similar redirect), exits with code 3 and
+prints "needs-reauth" so the caller can ask the AE to log in via VNC again and
+rerun sales_nav_session_setup.py to verify the refreshed profile.
 
 Usage:
   python3 sales_nav_query.py "Acme Corp"
