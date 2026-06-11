@@ -1,7 +1,6 @@
 ---
 name: leads-hunt
 description: "Daily lead-gen pipeline for BytePlus AEs: SSO check → topic-rotation discovery → 3-layer dedup → Lark digest. Runs on OpenClaw via cron. AE-portable; per-AE state in workspace; LinkedIn Sales Nav + BD-corp creds per AE."
-version: 0.1.0
 author: Ben Lim
 license: MIT
 ---
@@ -169,7 +168,7 @@ enabled: true
 
 `run_topic.py` discovers enabled topics by globbing `references/topics/*.md` and reading frontmatter via `topic_registry.py` (stdlib-only parser, no PyYAML dep). Adding a new topic = drop one file, no Python edits, no cron edits. Pausing = `enabled: false` in frontmatter.
 
-Sanity-check: `python3 scripts/topic_registry.py` prints the resolved registry. Filename must match `slug` field — typos fail loud.
+Sanity-check: [scripts/topic_registry.py](scripts/topic_registry.py) prints the resolved registry. Filename must match `slug` field — typos fail loud.
 
 The general pattern (filesystem-as-registry, fan-out-over-enum, slug-filename invariants) is captured in skill `filesystem-as-registry` if available in the AE's installation.
 
@@ -192,7 +191,7 @@ Common body-text signatures and meanings:
 - `"Let's do a quick security check"` / captcha — LinkedIn risk engine flagged the headless browser. AE must log in manually from a non-headless context first to season the profile.
 - `"verification code"` — email OTP path, write code to `/tmp/lk_otp.txt`.
 
-If LinkedIn redesigns its login DOM again, run `scripts/lk_dom_probe.py` to dump every `<input>` on the login page before guessing selectors.
+If LinkedIn redesigns its login DOM again, run [scripts/lk_dom_probe.py](scripts/lk_dom_probe.py) to dump every `<input>` on the login page before guessing selectors.
 
 ## Layer 3 (Sales Nav CRM dedup) — what the signal actually is
 

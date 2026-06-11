@@ -11,6 +11,7 @@ Steps:
   2. Write aggregate CSV (sorted by Score desc).
   3. Print digest with top 5 + counts + CSV path.
   4. Append shipped leads to kb.md so future Phase C runs dedup against them.
+  5. Upsert shipped leads into the configured Lark Base Leads table.
 
 Voice rules: no em-dash, light emoji only (⭐ 🌐 💡 📊 🔍 ⚠️ 📁 ✅).
 """
@@ -32,6 +33,15 @@ def _kb():
     try:
         import kb  # type: ignore
         return kb
+    except ImportError:
+        return None
+
+
+def _base_sync():
+    """Lazy import of Base sync helper."""
+    try:
+        import lark_base_sync  # type: ignore
+        return lark_base_sync
     except ImportError:
         return None
 
@@ -65,6 +75,27 @@ def _topics_from_registry(cfg) -> list[str]:
             if slug:
                 out.append(slug)
         return out
+
+
+def _lead_rows_for_base(combined: list[dict], today: str) -> list[dict]:
+    rows: list[dict] = []
+    for row in combined:
+        topic = row.get("_topic", row.get("Topic", ""))
+        summary = (row.get("Summary") or row.get("OutreachAngle") or "").strip()
+        rows.append(
+            {
+                "company": row.get("Company", ""),
+                "topic": topic,
+                "score": row.get("Score", ""),
+                "sales_nav_url": row.get("SalesNavURL") or row.get("Sales Nav URL") or "",
+                "linkedin_url": row.get("LinkedInURL") or row.get("LinkedIn URL") or "",
+                "summary": summary,
+                "date": today,
+                "status": "New",
+                "draft_message": "No",
+            }
+        )
+    return rows
 
 
 def deliver(cfg, dry_run: bool = False) -> int:
@@ -107,17 +138,36 @@ def deliver(cfg, dry_run: bool = False) -> int:
 
     if not dry_run:
         # Append shipped leads to kb.md so Phase C can dedup against them on future runs.
-        # kb.append_shipped(rows, today, cfg) writes shipped leads to kb.md.
         kb = _kb()
         if kb is not None:
             try:
                 kb.append_shipped(combined, today, cfg)
             except Exception as e:
-                print(f"[deliver] WARN: kb.append_shipped failed (non-fatal): {e}",
-                      file=sys.stderr)
+                print(f"[deliver] WARN: kb.append_shipped failed (non-fatal): {e}", file=sys.stderr)
         else:
-            print("[deliver] INFO: kb.py not yet available; shipped leads not logged "
-                  "to kb.md (Phase 2 wires this in).", file=sys.stderr)
+            print(
+                "[deliver] INFO: kb.py not yet available; shipped leads not logged to kb.md (Phase 2 wires this in).",
+                file=sys.stderr,
+            )
+
+        base_sync = _base_sync()
+        if base_sync is not None:
+            try:
+                if base_sync.is_configured(cfg):
+                    result = base_sync.upsert_leads(cfg, _lead_rows_for_base(combined, today))
+                    print(f"[deliver] INFO: upserted shipped leads to Lark Base: {result}", file=sys.stderr)
+                else:
+                    print(
+                        "[deliver] INFO: Lark Base not configured; skipped Base lead sync.",
+                        file=sys.stderr,
+                    )
+            except Exception as e:
+                print(f"[deliver] WARN: Lark Base sync failed (non-fatal): {e}", file=sys.stderr)
+        else:
+            print(
+                "[deliver] INFO: lark_base_sync.py not available; skipped Base lead sync.",
+                file=sys.stderr,
+            )
     return 0
 
 

@@ -17,11 +17,42 @@
     "run_log_template": "run-log-{date}.txt",
     "feedback_template": "feedback-{topic}.md",
     "browser_profile": "{LEADS_HUNT_HOME}/browser-profile/sales-nav",
-    "kb": "{LEADS_HUNT_HOME}/kb.md"
+    "kb": "{LEADS_HUNT_HOME}/kb.md",
+    "workspace_config": "{LEADS_HUNT_HOME}/config.json"
   },
   "external": {
     "sales_nav_query_script": "{SKILL_DIR}/scripts/sales_nav_query.py",
     "sales_nav_setup_script": "{SKILL_DIR}/scripts/sales_nav_session_setup.py"
+  },
+  "lark_base": {
+    "base_token": "",
+    "url": "",
+    "webhook_url": "",
+    "tables": {
+      "leads": {
+        "id": "",
+        "name": "Leads"
+      },
+      "customers": {
+        "id": "",
+        "name": "Customers"
+      },
+      "skip_list": {
+        "id": "",
+        "name": "Skip List"
+      },
+      "discovery_patterns": {
+        "id": "",
+        "name": "Discovery Patterns"
+      }
+    },
+    "workflow": {
+      "draft_message_yes": {
+        "id": "",
+        "name": "Generate outreach draft when Draft Message = Yes",
+        "enabled": false
+      }
+    }
   },
   "day_type_map": {
     "0": "A",

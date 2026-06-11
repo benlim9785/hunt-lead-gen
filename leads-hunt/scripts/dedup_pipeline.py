@@ -9,7 +9,8 @@ Dedup layers (in order):
   Layer 1: same-day skip — candidate already shipped earlier today
            (kb.already_seen reads kb.md "shipped" log; same-day re-runs of Phase C
            don't re-emit yesterday's candidates)
-  Layer 2: skip-list.txt — domain or company name (manual + auto-grown)
+  Layer 2: skip-list.txt + Lark Base Skip List — domain or company name
+           (manual + auto-grown, across both local file state and shared Base state)
   Layer 3: LLM-judge against kb.md — historical "have we shipped this before?"
            via kb.already_seen normalised name match. kb.md is the source of
            truth for "have we engaged this company before". Phase D appends
@@ -55,6 +56,15 @@ def _kb():
         return None
 
 
+def _base_sync():
+    """Lazy import of Lark Base sync helper."""
+    try:
+        import lark_base_sync  # type: ignore
+        return lark_base_sync
+    except ImportError:
+        return None
+
+
 def _today_myt() -> str:
     return (datetime.datetime.utcnow() + datetime.timedelta(hours=8)).date().isoformat()
 
@@ -72,13 +82,23 @@ def _normalize(s: str) -> str:
 def _load_skip_list(cfg) -> set[str]:
     out: set[str] = set()
     p = Path(cfg["paths"]["skip_list"])
-    if not p.exists():
-        return out
-    for line in p.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        out.add(_normalize(line))
+    if p.exists():
+        for line in p.read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            out.add(_normalize(line))
+
+    base_sync = _base_sync()
+    if base_sync is not None:
+        try:
+            if base_sync.is_configured(cfg):
+                out.update(base_sync.read_skip_list(cfg))
+        except Exception as e:
+            print(
+                f"[dedup] WARN: failed to read Lark Base Skip List: {e}; continuing with local skip-list only",
+                file=sys.stderr,
+            )
     return out
 
 
@@ -141,9 +161,9 @@ def run_dedup(topic: str, cfg, dry_run: bool = False) -> int:
 
     _log(f"[Phase C/{topic}] starting dedup over {len(candidates)} candidates", cfg)
     # 3-layer dedup stack:
-    #   Layer 2 (skip-list) — cheapest, in-memory set
-    #   Layer 3 (kb.md)     — historical shipments, source of truth
-    #   Layer 4 (Sales Nav) — personal Sales Nav session check; if unavailable,
+    #   Layer 2 (skip-list + Base Skip List) — cheapest, in-memory set
+    #   Layer 3 (kb.md)                      — historical shipments, source of truth
+    #   Layer 4 (Sales Nav)                  — personal Sales Nav session check; if unavailable,
     #                         continue and flag rows for manual CRM review
     skip_set = _load_skip_list(cfg)
 
